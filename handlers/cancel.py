@@ -1,3 +1,4 @@
+# handlers/cancel.py
 from aiogram import Router, F
 from aiogram.types import Message, CallbackQuery
 from aiogram.fsm.context import FSMContext
@@ -5,6 +6,8 @@ from database import Database
 from scheduler import ReminderScheduler
 from keyboards import main_menu
 import logging
+from aiogram.exceptions import TelegramBadRequest
+from config import ADMIN_ID
 
 router = Router()
 logger = logging.getLogger(__name__)
@@ -19,19 +22,17 @@ async def cancel_appointment_user(message: Message, bot):
         await message.answer("У вас нет активной записи.")
         return
 
-    # Спрашиваем подтверждение
-    text = (
-        f"Вы хотите отменить запись:\n"
-        f"📅 {appointment['appointment_date']} в {appointment['appointment_time']}\n\n"
-        f"Подтвердите отмену."
-    )
-    # Отправляем inline-кнопки Да/Нет
     from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton
     markup = InlineKeyboardMarkup(inline_keyboard=[
         [InlineKeyboardButton(text="✅ Да, отменить", callback_data=f"confirm_cancel_{appointment['id']}")],
         [InlineKeyboardButton(text="❌ Нет", callback_data="cancel_cancel")]
     ])
-    await message.answer(text, reply_markup=markup)
+    await message.answer(
+        f"Вы хотите отменить запись:\n"
+        f"📅 {appointment['appointment_date']} в {appointment['appointment_time']}\n\n"
+        f"Подтвердите отмену.",
+        reply_markup=markup
+    )
 
 @router.callback_query(F.data.startswith("confirm_cancel_"))
 async def confirm_cancel(callback: CallbackQuery, bot):
@@ -39,20 +40,23 @@ async def confirm_cancel(callback: CallbackQuery, bot):
     db: Database = bot.db
     scheduler: ReminderScheduler = bot.scheduler
 
-    # Получаем информацию о записи до удаления (для сообщения)
     app = await db.get_appointment_by_id(appointment_id)
     if not app:
         await callback.answer("Запись не найдена", show_alert=True)
         return
 
-    # Отменяем запись (освобождаем слот, удаляем из БД)
     success = await db.cancel_appointment(appointment_id)
     if success:
-        # Удаляем напоминание
         await scheduler.remove_reminder(appointment_id)
 
-        await callback.message.edit_text("✅ Запись успешно отменена.")
-        # Уведомляем админа
+        try:
+            await callback.message.edit_text("✅ Запись успешно отменена.")
+        except TelegramBadRequest as e:
+            if "message is not modified" in str(e):
+                pass
+            else:
+                raise
+
         await bot.send_message(
             ADMIN_ID,
             f"❌ Клиент отменил запись:\n"
