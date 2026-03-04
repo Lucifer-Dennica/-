@@ -115,7 +115,7 @@ class ReminderScheduler:
         reminders = await self.db.get_all_reminders()
         for r in reminders:
             # Проверяем, что время напоминания ещё не прошло
-            if r['remind_at'] > datetime.now(timezone('Europe/Moscow')):
+            if r['remind_at'].replace(tzinfo=timezone('Europe/Moscow')) > datetime.now(timezone('Europe/Moscow')):
                 job_id = f"reminder_{r['appointment_id']}"
                 self.scheduler.add_job(
                     self.send_reminder,
