@@ -87,3 +87,4 @@ class ReminderScheduler:
                     replace_existing=True
                 )
                 logger.info(f"Restored reminder {job_id}")
+#Fix timezone comparison
