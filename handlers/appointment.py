@@ -1,18 +1,24 @@
+# handlers/appointment.py
 from aiogram import Router, F
 from aiogram.types import Message, CallbackQuery
 from aiogram.fsm.context import FSMContext
-from datetime import datetime, date, time
+from datetime import datetime, date, time, timedelta
 import re
 from keyboards import (
-    calendar_keyboard, time_slots_keyboard, confirm_appointment_keyboard,
-    cancel_keyboard, main_menu
+    subscription_check_keyboard,  # добавили
+    calendar_keyboard, 
+    time_slots_keyboard, 
+    confirm_appointment_keyboard,
+    cancel_keyboard, 
+    main_menu
 )
 from database import Database
 from states import AppointmentStates
 from scheduler import ReminderScheduler
 from utils import check_subscription
-from config import CHANNEL_ID, ADMIN_ID, CHANNEL_LINK, CHANNEL_ID
+from config import CHANNEL_ID, ADMIN_ID, CHANNEL_LINK
 import logging
+from aiogram.exceptions import TelegramBadRequest  # добавили
 
 router = Router()
 logger = logging.getLogger(__name__)
@@ -51,9 +57,16 @@ async def start_appointment(message: Message, state: FSMContext, bot):
 @router.callback_query(F.data.startswith("month_"))
 async def process_calendar_nav(callback: CallbackQuery, state: FSMContext):
     _, year, month = callback.data.split("_")
-    await callback.message.edit_reply_markup(
-        reply_markup=calendar_keyboard(int(year), int(month))
-    )
+    try:
+        await callback.message.edit_reply_markup(
+            reply_markup=calendar_keyboard(int(year), int(month))
+        )
+    except TelegramBadRequest as e:
+        if "message is not modified" in str(e):
+            await callback.answer()
+            return
+        else:
+            raise
     await callback.answer()
 
 # Закрытие календаря
@@ -70,32 +83,40 @@ async def process_date_selection(callback: CallbackQuery, state: FSMContext, bot
     date_str = callback.data.split("_")[1]
     selected_date = datetime.strptime(date_str, "%Y-%m-%d").date()
 
-    # Проверяем, что дата не в прошлом
     if selected_date < datetime.now().date():
         await callback.answer("❌ Нельзя выбрать прошедшую дату", show_alert=True)
         return
 
-    # Сохраняем дату в состоянии
     await state.update_data(appointment_date=date_str)
 
-    # Получаем доступные слоты
     db: Database = bot.db
     slots = await db.get_available_slots(selected_date)
 
     if not slots:
-        await callback.message.edit_text(
-            "На выбранный день нет свободных слотов. Выберите другую дату.",
-            reply_markup=calendar_keyboard(selected_date.year, selected_date.month)
-        )
+        try:
+            await callback.message.edit_text(
+                "На выбранный день нет свободных слотов. Выберите другую дату.",
+                reply_markup=calendar_keyboard(selected_date.year, selected_date.month)
+            )
+        except TelegramBadRequest as e:
+            if "message is not modified" in str(e):
+                pass
+            else:
+                raise
         await callback.answer()
         return
 
-    # Показываем слоты
     await state.set_state(AppointmentStates.choosing_time)
-    await callback.message.edit_text(
-        f"Выберите время на {date_str}:",
-        reply_markup=time_slots_keyboard(slots, date_str)
-    )
+    try:
+        await callback.message.edit_text(
+            f"Выберите время на {date_str}:",
+            reply_markup=time_slots_keyboard(slots, date_str)
+        )
+    except TelegramBadRequest as e:
+        if "message is not modified" in str(e):
+            pass
+        else:
+            raise
     await callback.answer()
 
 # Назад к календарю
@@ -103,25 +124,35 @@ async def process_date_selection(callback: CallbackQuery, state: FSMContext, bot
 async def back_to_calendar(callback: CallbackQuery, state: FSMContext):
     await state.set_state(AppointmentStates.choosing_date)
     now = datetime.now()
-    await callback.message.edit_text(
-        "Выберите дату:",
-        reply_markup=calendar_keyboard(now.year, now.month)
-    )
+    try:
+        await callback.message.edit_text(
+            "Выберите дату:",
+            reply_markup=calendar_keyboard(now.year, now.month)
+        )
+    except TelegramBadRequest as e:
+        if "message is not modified" in str(e):
+            pass
+        else:
+            raise
     await callback.answer()
 
 # Выбор времени
 @router.callback_query(F.data.startswith("time_"))
 async def process_time_selection(callback: CallbackQuery, state: FSMContext, bot):
     _, date_str, time_str = callback.data.split("_")
-    # Сохраняем дату и время
     await state.update_data(appointment_date=date_str, appointment_time=time_str)
 
-    # Переходим к запросу имени
     await state.set_state(AppointmentStates.entering_name)
-    await callback.message.edit_text(
-        "Введите ваше имя:",
-        reply_markup=cancel_keyboard()
-    )
+    try:
+        await callback.message.edit_text(
+            "Введите ваше имя:",
+            reply_markup=cancel_keyboard()
+        )
+    except TelegramBadRequest as e:
+        if "message is not modified" in str(e):
+            pass
+        else:
+            raise
     await callback.answer()
 
 # Ввод имени
@@ -147,7 +178,6 @@ async def process_phone(message: Message, state: FSMContext):
         return
     await state.update_data(client_phone=phone)
 
-    # Показываем подтверждение
     data = await state.get_data()
     date_str = data['appointment_date']
     time_str = data['appointment_time']
@@ -171,21 +201,17 @@ async def process_phone(message: Message, state: FSMContext):
 # Подтверждение записи
 @router.callback_query(F.data.startswith("confirm_"))
 async def confirm_appointment(callback: CallbackQuery, state: FSMContext, bot):
-    # Извлекаем дату и время из callback
     _, date_str, time_str = callback.data.split("_")
     user_id = callback.from_user.id
 
-    # Получаем данные из состояния (имя, телефон)
     data = await state.get_data()
     client_name = data.get('client_name')
     client_phone = data.get('client_phone')
 
-    # Проверяем, не занят ли уже слот (на случай двойного бронирования)
     db: Database = bot.db
     slot_date = datetime.strptime(date_str, "%Y-%m-%d").date()
     slot_time = datetime.strptime(time_str, "%H:%M").time()
 
-    # Проверяем доступность слота
     available = await db.get_available_slots(slot_date)
     if slot_time not in available:
         await callback.message.edit_text(
@@ -195,7 +221,6 @@ async def confirm_appointment(callback: CallbackQuery, state: FSMContext, bot):
         await callback.answer()
         return
 
-    # Создаём запись
     try:
         app_id = await db.create_appointment(
             user_id=user_id,
@@ -204,10 +229,8 @@ async def confirm_appointment(callback: CallbackQuery, state: FSMContext, bot):
             app_date=slot_date,
             app_time=slot_time
         )
-        # Помечаем слот как занятый
         await db.occupy_slot(slot_date, slot_time)
 
-        # Планируем напоминание, если до визита больше 24 часов
         appointment_datetime = datetime.combine(slot_date, slot_time)
         now = datetime.now()
         delta = appointment_datetime - now
@@ -227,7 +250,6 @@ async def confirm_appointment(callback: CallbackQuery, state: FSMContext, bot):
         )
         await bot.send_message(ADMIN_ID, admin_text)
 
-        # Отправляем в канал с расписанием (если канал есть)
         if CHANNEL_ID:
             channel_text = (
                 f"📅 Запись на {date_str} в {time_str}\n"
@@ -235,7 +257,6 @@ async def confirm_appointment(callback: CallbackQuery, state: FSMContext, bot):
             )
             await bot.send_message(CHANNEL_ID, channel_text)
 
-        # Поздравляем пользователя
         await callback.message.edit_text(
             f"✅ Вы успешно записаны!\n"
             f"Дата: {date_str}\n"
