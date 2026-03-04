@@ -313,4 +313,4 @@ async def delete_range_end(message: Message, state: FSMContext, bot):
     await message.answer(f"Все доступные слоты с {start_str} по {time_str} на {date_str} удалены.")
     await state.clear()
 
-Fix edit_text exception
+#Fix edit_text exception
