@@ -34,12 +34,12 @@ async def cancel_appointment_user(message: Message, bot):
         f"Подтвердите отмену."
     )
     markup = InlineKeyboardMarkup(inline_keyboard=[
-        [InlineKeyboardButton(text="✅ Да, отменить", callback_data=f"confirm_cancel_{appointment['id']}")],
+        [InlineKeyboardButton(text="✅ Да, отменить", callback_data=f"real_cancel_{appointment['id']}")],
         [InlineKeyboardButton(text="❌ Нет", callback_data="cancel_cancel")]
     ])
     await message.answer(text, reply_markup=markup)
 
-@router.callback_query(F.data.startswith("confirm_cancel_"))
+@router.callback_query(F.data.startswith("real_cancel_"))
 async def confirm_cancel(callback: CallbackQuery, bot):
     appointment_id = int(callback.data.split("_")[2])
     db: Database = bot.db
@@ -75,7 +75,6 @@ async def confirm_cancel(callback: CallbackQuery, bot):
             except Exception as e:
                 logger.error(f"Failed to notify admin about cancellation: {e}")
 
-            # Уведомляем пользователя дополнительно (уже есть edit_text, но можно и отдельно)
         else:
             await callback.message.edit_text("❌ Не удалось отменить запись.")
     except Exception as e:
