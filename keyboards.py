@@ -68,10 +68,11 @@ def admin_panel():
     builder.button(text="➕ Добавить слоты", callback_data="admin_add_slots")
     builder.button(text="➖ Удалить слот", callback_data="admin_remove_slot")
     builder.button(text="📅 Закрыть день", callback_data="admin_close_day")
+    builder.button(text="🔓 Открыть день", callback_data="admin_open_day")   # Новая кнопка
     builder.button(text="📋 Просмотр расписания", callback_data="admin_view_schedule")
     builder.button(text="❌ Отменить запись клиента", callback_data="admin_cancel_appointment")
     builder.button(text="🗑 Удалить диапазон времени", callback_data="admin_delete_range")
-    builder.button(text="📋 Клиенты", callback_data="admin_view_clients")  # Новая кнопка
+    builder.button(text="📋 Клиенты", callback_data="admin_view_clients")
     builder.adjust(2)
     return builder.as_markup()
 
