@@ -12,16 +12,16 @@ def main_menu():
     ]
     return ReplyKeyboardMarkup(keyboard=kb, resize_keyboard=True)
 
-# ----- Inline-календарь (месяц) -----
-def calendar_keyboard(year: int, month: int):
+# ----- Общий календарь (для клиентов) -----
+def calendar_keyboard(year: int, month: int, prefix: str = "date"):
+    """
+    prefix: "date" для клиентов, "admin_date" для админки
+    """
     builder = InlineKeyboardBuilder()
-    # Заголовок с месяцем и годом
     month_name = calendar.month_name[month]
     builder.row(InlineKeyboardButton(text=f"{month_name} {year}", callback_data="ignore"))
-    # Дни недели
     week_days = ["Пн", "Вт", "Ср", "Чт", "Пт", "Сб", "Вс"]
     builder.row(*[InlineKeyboardButton(text=day, callback_data="ignore") for day in week_days])
-    # Календарные дни
     month_calendar = calendar.monthcalendar(year, month)
     for week in month_calendar:
         row = []
@@ -30,23 +30,27 @@ def calendar_keyboard(year: int, month: int):
                 row.append(InlineKeyboardButton(text=" ", callback_data="ignore"))
             else:
                 date_str = f"{year}-{month:02d}-{day:02d}"
-                row.append(InlineKeyboardButton(text=str(day), callback_data=f"date_{date_str}"))
+                row.append(InlineKeyboardButton(text=str(day), callback_data=f"{prefix}_{date_str}"))
         builder.row(*row)
     # Кнопки навигации
     prev_month = datetime(year, month, 1) - timedelta(days=1)
     next_month = datetime(year, month, 28) + timedelta(days=4)
     nav_row = []
-    if prev_month > datetime(2020, 1, 1):  # Ограничение в прошлое
+    if prev_month > datetime(2020, 1, 1):
         nav_row.append(InlineKeyboardButton(text="◀", callback_data=f"month_{prev_month.year}_{prev_month.month}"))
     else:
         nav_row.append(InlineKeyboardButton(text=" ", callback_data="ignore"))
     nav_row.append(InlineKeyboardButton(text="❌ Закрыть", callback_data="cancel_calendar"))
-    if next_month < datetime(2030, 1, 1):  # Ограничение в будущее
+    if next_month < datetime(2030, 1, 1):
         nav_row.append(InlineKeyboardButton(text="▶", callback_data=f"month_{next_month.year}_{next_month.month}"))
     else:
         nav_row.append(InlineKeyboardButton(text=" ", callback_data="ignore"))
     builder.row(*nav_row)
     return builder.as_markup()
+
+# ----- Календарь для админки (с другим префиксом) -----
+def admin_calendar_keyboard(year: int, month: int):
+    return calendar_keyboard(year, month, prefix="admin_date")
 
 # ----- Кнопки выбора времени (слоты) -----
 def time_slots_keyboard(slots, date_str):
@@ -54,11 +58,11 @@ def time_slots_keyboard(slots, date_str):
     for slot in slots:
         time_str = slot.strftime("%H:%M")
         builder.button(text=time_str, callback_data=f"time_{date_str}_{time_str}")
-    builder.adjust(3)  # по 3 в ряд
+    builder.adjust(3)
     builder.row(InlineKeyboardButton(text="🔙 Назад к календарю", callback_data="back_to_calendar"))
     return builder.as_markup()
 
-# ----- Админ-панель -----
+# ----- Админ-панель (обновлённая) -----
 def admin_panel():
     builder = InlineKeyboardBuilder()
     builder.button(text="➕ Добавить слоты", callback_data="admin_add_slots")
@@ -67,6 +71,7 @@ def admin_panel():
     builder.button(text="📋 Просмотр расписания", callback_data="admin_view_schedule")
     builder.button(text="❌ Отменить запись клиента", callback_data="admin_cancel_appointment")
     builder.button(text="🗑 Удалить диапазон времени", callback_data="admin_delete_range")
+    builder.button(text="📋 Клиенты", callback_data="admin_view_clients")  # Новая кнопка
     builder.adjust(2)
     return builder.as_markup()
 
