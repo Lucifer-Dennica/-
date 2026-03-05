@@ -277,7 +277,7 @@ async def admin_date_selected(callback: CallbackQuery, state: FSMContext, bot):
             if "query is too old" in str(e):
                 logger.warning("Callback query too old in admin_date_selected")
 
-# Обработка кнопок админ-панели (исправлено)
+# Обработка кнопок админ-панели (основное меню)
 @router.callback_query(F.data.startswith("admin_"))
 async def admin_actions(callback: CallbackQuery, state: FSMContext):
     if not is_admin(callback.from_user.id):
@@ -289,120 +289,71 @@ async def admin_actions(callback: CallbackQuery, state: FSMContext):
         if len(parts) < 2:
             await callback.answer("Неизвестная команда")
             return
-        prefix = parts[0]  # "admin"
-        action = parts[1]  # например "add", "remove", "manage"
+        action = parts[1]
         logger.info(f"Admin action: {action}, full callback: {callback.data}")
 
         now = datetime.now()
 
+        # Основные действия со слотами и днями
         if action == "add":
             await state.update_data(admin_action='add_slots')
-            try:
-                await callback.message.edit_text(
-                    "Выберите дату для добавления слотов:",
-                    reply_markup=admin_calendar_keyboard(now.year, now.month)
-                )
-            except TelegramBadRequest as e:
-                if "message is not modified" in str(e):
-                    pass
-                else:
-                    raise
+            await callback.message.edit_text(
+                "Выберите дату для добавления слотов:",
+                reply_markup=admin_calendar_keyboard(now.year, now.month)
+            )
         elif action == "remove":
             await state.update_data(admin_action='remove_slot')
-            try:
-                await callback.message.edit_text(
-                    "Выберите дату, на которой нужно удалить слот:",
-                    reply_markup=admin_calendar_keyboard(now.year, now.month)
-                )
-            except TelegramBadRequest as e:
-                if "message is not modified" in str(e):
-                    pass
-                else:
-                    raise
+            await callback.message.edit_text(
+                "Выберите дату, на которой нужно удалить слот:",
+                reply_markup=admin_calendar_keyboard(now.year, now.month)
+            )
         elif action == "close":
             await state.update_data(admin_action='close_day')
-            try:
-                await callback.message.edit_text(
-                    "Выберите дату, которую нужно закрыть:",
-                    reply_markup=admin_calendar_keyboard(now.year, now.month)
-                )
-            except TelegramBadRequest as e:
-                if "message is not modified" in str(e):
-                    pass
-                else:
-                    raise
+            await callback.message.edit_text(
+                "Выберите дату, которую нужно закрыть:",
+                reply_markup=admin_calendar_keyboard(now.year, now.month)
+            )
         elif action == "open":
             await state.update_data(admin_action='open_day')
-            try:
-                await callback.message.edit_text(
-                    "Выберите дату, которую нужно открыть:",
-                    reply_markup=admin_calendar_keyboard(now.year, now.month)
-                )
-            except TelegramBadRequest as e:
-                if "message is not modified" in str(e):
-                    pass
-                else:
-                    raise
+            await callback.message.edit_text(
+                "Выберите дату, которую нужно открыть:",
+                reply_markup=admin_calendar_keyboard(now.year, now.month)
+            )
         elif action == "view":
             await state.update_data(admin_action='view_schedule')
-            try:
-                await callback.message.edit_text(
-                    "Выберите дату для просмотра расписания:",
-                    reply_markup=admin_calendar_keyboard(now.year, now.month)
-                )
-            except TelegramBadRequest as e:
-                if "message is not modified" in str(e):
-                    pass
-                else:
-                    raise
+            await callback.message.edit_text(
+                "Выберите дату для просмотра расписания:",
+                reply_markup=admin_calendar_keyboard(now.year, now.month)
+            )
         elif action == "cancel":
             await state.set_state(AdminStates.canceling_appointment)
-            try:
-                await callback.message.edit_text(
-                    "Введите ID записи, которую нужно отменить:",
-                    reply_markup=cancel_keyboard()
-                )
-            except TelegramBadRequest as e:
-                if "message is not modified" in str(e):
-                    pass
-                else:
-                    raise
+            await callback.message.edit_text(
+                "Введите ID записи, которую нужно отменить:",
+                reply_markup=cancel_keyboard()
+            )
         elif action == "delete":
             await state.update_data(admin_action='delete_range')
-            try:
-                await callback.message.edit_text(
-                    "Выберите дату для удаления диапазона:",
-                    reply_markup=admin_calendar_keyboard(now.year, now.month)
-                )
-            except TelegramBadRequest as e:
-                if "message is not modified" in str(e):
-                    pass
-                else:
-                    raise
+            await callback.message.edit_text(
+                "Выберите дату для удаления диапазона:",
+                reply_markup=admin_calendar_keyboard(now.year, now.month)
+            )
         elif action == "view_clients":
             await state.update_data(admin_action='view_clients')
-            try:
-                await callback.message.edit_text(
-                    "Выберите дату для просмотра клиентов:",
-                    reply_markup=admin_calendar_keyboard(now.year, now.month)
-                )
-            except TelegramBadRequest as e:
-                if "message is not modified" in str(e):
-                    pass
-                else:
-                    raise
-        elif action == "manage":
-            # Открываем меню управления прайсом
-            try:
-                await callback.message.edit_text(
-                    "Управление прайс-листом:",
-                    reply_markup=admin_prices_keyboard()
-                )
-            except TelegramBadRequest as e:
-                if "message is not modified" in str(e):
-                    pass
-                else:
-                    raise
+            await callback.message.edit_text(
+                "Выберите дату для просмотра клиентов:",
+                reply_markup=admin_calendar_keyboard(now.year, now.month)
+            )
+        # Действия для управления прайсом — вызываем соответствующие функции
+        elif action == "add_service":
+            await add_service_start(callback, state)
+        elif action == "list_services":
+            await list_services(callback, callback.bot)
+        elif action == "edit_service":
+            await edit_service_start(callback, callback.bot)
+        elif action == "delete_service":
+            await delete_service_start(callback, callback.bot)
+        elif action == "prices_back":
+            await prices_back(callback, state)
         else:
             logger.warning(f"Unknown admin action: {action}")
             await callback.answer("Неизвестная команда")
@@ -417,45 +368,7 @@ async def admin_actions(callback: CallbackQuery, state: FSMContext):
                 logger.warning("Callback query too old in admin_actions")
 
 # ----- Управление прайсом -----
-@router.callback_query(F.data == "admin_manage_prices")
-async def manage_prices(callback: CallbackQuery, state: FSMContext):
-    if not is_admin(callback.from_user.id):
-        await callback.answer("Доступ запрещён", show_alert=True)
-        return
-    try:
-        await callback.message.edit_text(
-            "Управление прайс-листом:",
-            reply_markup=admin_prices_keyboard()
-        )
-    except TelegramBadRequest as e:
-        if "message is not modified" in str(e):
-            pass
-        else:
-            logger.error(f"Error in manage_prices: {e}")
-    await callback.answer()
-
-@router.callback_query(F.data == "admin_prices_back")
-async def prices_back(callback: CallbackQuery, state: FSMContext):
-    if not is_admin(callback.from_user.id):
-        await callback.answer("Доступ запрещён", show_alert=True)
-        return
-    try:
-        await callback.message.edit_text(
-            "Управление прайс-листом:",
-            reply_markup=admin_prices_keyboard()
-        )
-    except TelegramBadRequest as e:
-        if "message is not modified" in str(e):
-            pass
-        else:
-            logger.error(f"Error in prices_back: {e}")
-    await callback.answer()
-
-@router.callback_query(F.data == "admin_add_service")
 async def add_service_start(callback: CallbackQuery, state: FSMContext):
-    if not is_admin(callback.from_user.id):
-        await callback.answer("Доступ запрещён", show_alert=True)
-        return
     await state.set_state(AdminStates.adding_service_name)
     try:
         await callback.message.edit_text(
@@ -467,7 +380,6 @@ async def add_service_start(callback: CallbackQuery, state: FSMContext):
             pass
         else:
             raise
-    await callback.answer()
 
 @router.message(AdminStates.adding_service_name)
 async def add_service_name(message: Message, state: FSMContext, bot):
@@ -502,11 +414,7 @@ async def add_service_price(message: Message, state: FSMContext, bot):
     await state.clear()
     await message.answer("Управление прайс-листом:", reply_markup=admin_prices_keyboard())
 
-@router.callback_query(F.data == "admin_list_services")
 async def list_services(callback: CallbackQuery, bot):
-    if not is_admin(callback.from_user.id):
-        await callback.answer("Доступ запрещён", show_alert=True)
-        return
     db: Database = bot.db
     services = await db.get_all_services()
     if not services:
@@ -522,13 +430,8 @@ async def list_services(callback: CallbackQuery, bot):
             pass
         else:
             logger.error(f"Error listing services: {e}")
-    await callback.answer()
 
-@router.callback_query(F.data == "admin_edit_service")
 async def edit_service_start(callback: CallbackQuery, bot):
-    if not is_admin(callback.from_user.id):
-        await callback.answer("Доступ запрещён", show_alert=True)
-        return
     db: Database = bot.db
     services = await db.get_all_services()
     if not services:
@@ -544,7 +447,6 @@ async def edit_service_start(callback: CallbackQuery, bot):
             pass
         else:
             raise
-    await callback.answer()
 
 @router.callback_query(F.data.startswith("edit_"))
 async def edit_service_price(callback: CallbackQuery, state: FSMContext, bot):
@@ -591,11 +493,7 @@ async def edit_service_price_finish(message: Message, state: FSMContext, bot):
     await state.clear()
     await message.answer("Управление прайс-листом:", reply_markup=admin_prices_keyboard())
 
-@router.callback_query(F.data == "admin_delete_service")
 async def delete_service_start(callback: CallbackQuery, bot):
-    if not is_admin(callback.from_user.id):
-        await callback.answer("Доступ запрещён", show_alert=True)
-        return
     db: Database = bot.db
     services = await db.get_all_services()
     if not services:
@@ -611,7 +509,6 @@ async def delete_service_start(callback: CallbackQuery, bot):
             pass
         else:
             raise
-    await callback.answer()
 
 @router.callback_query(F.data.startswith("delete_"))
 async def delete_service_confirm(callback: CallbackQuery, bot):
@@ -643,25 +540,18 @@ async def delete_service_confirm(callback: CallbackQuery, bot):
             )
         except:
             pass
-    await callback.answer()
 
-@router.callback_query(F.data == "admin_back")
-async def admin_back(callback: CallbackQuery, state: FSMContext):
-    if not is_admin(callback.from_user.id):
-        await callback.answer("Доступ запрещён", show_alert=True)
-        return
-    await state.clear()
+async def prices_back(callback: CallbackQuery, state: FSMContext):
     try:
         await callback.message.edit_text(
-            "Панель администратора:",
-            reply_markup=admin_panel()
+            "Управление прайс-листом:",
+            reply_markup=admin_prices_keyboard()
         )
     except TelegramBadRequest as e:
         if "message is not modified" in str(e):
             pass
         else:
             raise
-    await callback.answer()
 
 # ----- Удаление конкретного слота (выбранного из списка) -----
 @router.callback_query(F.data.startswith("remove_"))
