@@ -2,8 +2,9 @@ from aiogram.fsm.state import State, StatesGroup
 
 # Состояния для записи на приём
 class AppointmentStates(StatesGroup):
-    choosing_date = State()      # Выбор даты (уже через inline, но оставим)
+    choosing_date = State()      # Выбор даты
     choosing_time = State()      # Выбор времени
+    choosing_services = State()  # Выбор услуг (новое)
     entering_name = State()      # Ввод имени
     entering_phone = State()     # Ввод телефона
     confirming = State()         # Подтверждение
@@ -26,3 +27,9 @@ class AdminStates(StatesGroup):
     deleting_range_date = State()        # Ввод даты
     deleting_range_start = State()       # Ввод начала интервала
     deleting_range_end = State()         # Ввод конца интервала
+    # Управление прайсом
+    adding_service_name = State()        # Ввод названия услуги
+    adding_service_price = State()       # Ввод цены
+    editing_service_select = State()     # Выбор услуги для редактирования
+    editing_service_price = State()      # Ввод новой цены
+    deleting_service_select = State()    # Выбор услуги для удаления
