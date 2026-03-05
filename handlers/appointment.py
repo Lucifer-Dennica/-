@@ -3,7 +3,7 @@ from datetime import datetime, timedelta
 from aiogram import Router, F
 from aiogram.types import Message, CallbackQuery
 from aiogram.fsm.context import FSMContext
-from aiogram.exceptions import TelegramBadRequest  # <-- ВАЖНО: добавлен импорт
+from aiogram.exceptions import TelegramBadRequest
 from database import Database
 from scheduler import ReminderScheduler
 from keyboards import (
@@ -226,7 +226,7 @@ async def process_time_selection(callback: CallbackQuery, state: FSMContext, bot
     try:
         await callback.message.edit_text(
             "Выберите услуги (можно несколько):",
-            reply_markup=services_keyboard(services, date_str, time_str)
+            reply_markup=services_keyboard(services, [], date_str, time_str)
         )
     except TelegramBadRequest as e:
         if "message is not modified" in str(e):
@@ -239,53 +239,70 @@ async def process_time_selection(callback: CallbackQuery, state: FSMContext, bot
         if "query is too old" in str(e):
             logger.warning("Callback query too old in process_time_selection")
 
-# Выбор услуги (добавление в список) - ИСПРАВЛЕНО с обработкой ошибок
-@router.callback_query(F.data.startswith("service_"))
-async def service_selected(callback: CallbackQuery, state: FSMContext, bot):
+# Переключение выбора услуги (новая логика)
+@router.callback_query(F.data.startswith("toggle_service_"))
+async def toggle_service(callback: CallbackQuery, state: FSMContext, bot):
     parts = callback.data.split("_")
-    if len(parts) < 4:
+    if len(parts) < 5:
         try:
             await callback.answer("Неверные данные")
         except:
             pass
         return
-    service_id = int(parts[1])
-    date_str = parts[2]
-    time_str = parts[3]
+    service_id = int(parts[2])
+    date_str = parts[3]
+    time_str = parts[4]
 
     data = await state.get_data()
     selected = data.get('selected_services', [])
-    if service_id not in selected:
-        selected.append(service_id)
-        await state.update_data(selected_services=selected)
-        try:
-            await callback.answer("✅ Услуга добавлена", show_alert=False)
-        except TelegramBadRequest as e:
-            if "query is too old" in str(e):
-                logger.warning("Callback query too old in service_selected (add)")
-            else:
-                raise
+    if service_id in selected:
+        selected.remove(service_id)
+        action = "убрана"
     else:
-        try:
-            await callback.answer("⚠️ Уже выбрано", show_alert=False)
-        except TelegramBadRequest as e:
-            if "query is too old" in str(e):
-                logger.warning("Callback query too old in service_selected (already)")
-            else:
-                raise
+        selected.append(service_id)
+        action = "добавлена"
+    await state.update_data(selected_services=selected)
 
-    # Обновляем клавиатуру (показываем текущий выбор)
     db: Database = bot.db
     services = await db.get_all_services()
     try:
         await callback.message.edit_reply_markup(
-            reply_markup=services_keyboard(services, date_str, time_str)
+            reply_markup=services_keyboard(services, selected, date_str, time_str)
         )
     except TelegramBadRequest as e:
         if "message is not modified" in str(e):
             logger.debug("Keyboard not modified, skipping update")
         else:
             raise
+    try:
+        await callback.answer(f"Услуга {action}", show_alert=False)
+    except TelegramBadRequest as e:
+        if "query is too old" in str(e):
+            logger.warning("Callback query too old in toggle_service")
+        else:
+            raise
+
+# Подтверждение выбранных услуг (переход к имени)
+@router.callback_query(F.data.startswith("confirm_services_"))
+async def confirm_services(callback: CallbackQuery, state: FSMContext, bot):
+    parts = callback.data.split("_")
+    if len(parts) < 4:
+        await callback.answer("Неверные данные")
+        return
+    date_str = parts[2]
+    time_str = parts[3]
+    await state.set_state(AppointmentStates.entering_name)
+    try:
+        await callback.message.edit_text(
+            "Введите ваше имя:",
+            reply_markup=cancel_keyboard()
+        )
+    except TelegramBadRequest as e:
+        if "message is not modified" in str(e):
+            pass
+        else:
+            logger.error(f"Error editing message: {e}")
+    await callback.answer()
 
 # Продолжить без услуг
 @router.callback_query(F.data.startswith("noservice_"))
@@ -310,30 +327,7 @@ async def no_service(callback: CallbackQuery, state: FSMContext, bot):
             logger.error(f"Error editing message: {e}")
     await callback.answer()
 
-# Кнопка подтверждения записи (после выбора услуг)
-@router.callback_query(F.data.startswith("confirm_appointment_"))
-async def confirm_appointment(callback: CallbackQuery, state: FSMContext, bot):
-    parts = callback.data.split("_")
-    if len(parts) < 4:
-        await callback.answer("Неверные данные")
-        return
-    date_str = parts[2]
-    time_str = parts[3]
-
-    await state.set_state(AppointmentStates.entering_name)
-    try:
-        await callback.message.edit_text(
-            "Введите ваше имя:",
-            reply_markup=cancel_keyboard()
-        )
-    except TelegramBadRequest as e:
-        if "message is not modified" in str(e):
-            pass
-        else:
-            logger.error(f"Error editing message: {e}")
-    await callback.answer()
-
-# Повторный выбор услуг
+# Повторный выбор услуг (при возврате с этапа подтверждения)
 @router.callback_query(F.data.startswith("reselect_services_"))
 async def reselect_services(callback: CallbackQuery, state: FSMContext, bot):
     parts = callback.data.split("_")
@@ -350,7 +344,7 @@ async def reselect_services(callback: CallbackQuery, state: FSMContext, bot):
     try:
         await callback.message.edit_text(
             "Выберите услуги (можно несколько):",
-            reply_markup=services_keyboard(services, date_str, time_str)
+            reply_markup=services_keyboard(services, [], date_str, time_str)
         )
     except TelegramBadRequest as e:
         if "message is not modified" in str(e):
