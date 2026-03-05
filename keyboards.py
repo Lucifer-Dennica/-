@@ -58,20 +58,25 @@ def time_slots_keyboard(slots, date_str):
     builder.row(InlineKeyboardButton(text="🔙 Назад к календарю", callback_data="back_to_calendar"))
     return builder.as_markup()
 
-# ----- Клавиатура выбора услуг (для клиента) -----
-def services_keyboard(services, date_str, time_str):
+# ----- Клавиатура выбора услуг (для клиента) с визуальным выделением -----
+def services_keyboard(services, selected_ids, date_str, time_str):
     builder = InlineKeyboardBuilder()
     for s in services:
+        # Если услуга выбрана, добавляем галочку
+        text = f"✅ {s['name']} — {s['price']} BYN" if s['id'] in selected_ids else f"{s['name']} — {s['price']} BYN"
         builder.button(
-            text=f"{s['name']} — {s['price']} BYN",
-            callback_data=f"service_{s['id']}_{date_str}_{time_str}"
+            text=text,
+            callback_data=f"toggle_service_{s['id']}_{date_str}_{time_str}"
         )
     builder.adjust(1)
-    builder.row(InlineKeyboardButton(text="✅ Продолжить без услуг", callback_data=f"noservice_{date_str}_{time_str}"))
+    builder.row(
+        InlineKeyboardButton(text="✅ Подтвердить выбор", callback_data=f"confirm_services_{date_str}_{time_str}"),
+        InlineKeyboardButton(text="➡️ Продолжить без услуг", callback_data=f"noservice_{date_str}_{time_str}")
+    )
     builder.row(InlineKeyboardButton(text="❌ Отмена", callback_data="cancel_fsm"))
     return builder.as_markup()
 
-# ----- Клавиатура подтверждения выбранных услуг -----
+# ----- Клавиатура подтверждения выбранных услуг (после выбора) -----
 def confirm_services_keyboard(date_str, time_str):
     builder = InlineKeyboardBuilder()
     builder.button(text="✅ Подтвердить запись", callback_data=f"confirm_appointment_{date_str}_{time_str}")
