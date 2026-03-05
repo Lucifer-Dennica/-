@@ -64,11 +64,26 @@ class Database:
                     remind_at TIMESTAMP NOT NULL
                 )
             """)
+            # Услуги (прайс-лист)
+            await conn.execute("""
+                CREATE TABLE IF NOT EXISTS services (
+                    id SERIAL PRIMARY KEY,
+                    name TEXT NOT NULL UNIQUE,
+                    price INTEGER NOT NULL
+                )
+            """)
+            # Связь записей с услугами (многие ко многим)
+            await conn.execute("""
+                CREATE TABLE IF NOT EXISTS appointment_services (
+                    appointment_id INTEGER REFERENCES appointments(id) ON DELETE CASCADE,
+                    service_id INTEGER REFERENCES services(id) ON DELETE CASCADE,
+                    PRIMARY KEY (appointment_id, service_id)
+                )
+            """)
             logger.info("Tables created or already exist")
 
-    # ----- Слоты -----
+    # ----- Слоты (без изменений) -----
     async def add_time_slot(self, slot_date: date, slot_time: time):
-        """Добавляет новый доступный слот."""
         async with self.pool.acquire() as conn:
             await conn.execute("""
                 INSERT INTO time_slots (slot_date, slot_time)
@@ -78,7 +93,6 @@ class Database:
             logger.debug(f"Slot added: {slot_date} {slot_time}")
 
     async def get_available_slots(self, slot_date: date):
-        """Возвращает список доступного времени для указанной даты."""
         async with self.pool.acquire() as conn:
             rows = await conn.fetch("""
                 SELECT slot_time FROM time_slots
@@ -90,7 +104,6 @@ class Database:
             return slots
 
     async def get_all_slots(self, slot_date: date):
-        """Возвращает все слоты на дату (с доступностью)."""
         async with self.pool.acquire() as conn:
             rows = await conn.fetch("""
                 SELECT slot_time, is_available FROM time_slots
@@ -100,7 +113,6 @@ class Database:
             return rows
 
     async def delete_time_slot(self, slot_date: date, slot_time: time):
-        """Удаляет конкретный слот (только если он свободен)."""
         async with self.pool.acquire() as conn:
             await conn.execute("""
                 DELETE FROM time_slots
@@ -109,7 +121,6 @@ class Database:
             logger.debug(f"Slot deleted: {slot_date} {slot_time}")
 
     async def delete_time_range(self, slot_date: date, start_time: time, end_time: time):
-        """Удаляет все доступные слоты в заданном временном диапазоне."""
         async with self.pool.acquire() as conn:
             await conn.execute("""
                 DELETE FROM time_slots
@@ -121,7 +132,6 @@ class Database:
             logger.debug(f"Slots deleted for {slot_date} from {start_time} to {end_time}")
 
     async def close_day(self, slot_date: date):
-        """Помечает все слоты указанной даты как недоступные."""
         async with self.pool.acquire() as conn:
             await conn.execute("""
                 UPDATE time_slots
@@ -131,7 +141,6 @@ class Database:
             logger.info(f"Day closed: {slot_date}")
 
     async def open_day(self, slot_date: date):
-        """Открывает день: все слоты становятся доступными."""
         async with self.pool.acquire() as conn:
             await conn.execute("""
                 UPDATE time_slots
@@ -141,7 +150,6 @@ class Database:
             logger.info(f"Day opened: {slot_date}")
 
     async def occupy_slot(self, slot_date: date, slot_time: time):
-        """Помечает слот как занятый (после бронирования)."""
         async with self.pool.acquire() as conn:
             await conn.execute("""
                 UPDATE time_slots
@@ -151,7 +159,6 @@ class Database:
             logger.debug(f"Slot occupied: {slot_date} {slot_time}")
 
     async def free_slot(self, slot_date: date, slot_time: time):
-        """Освобождает слот (после отмены записи)."""
         async with self.pool.acquire() as conn:
             await conn.execute("""
                 UPDATE time_slots
@@ -160,12 +167,10 @@ class Database:
             """, slot_date, slot_time)
             logger.debug(f"Slot freed: {slot_date} {slot_time}")
 
-    # ----- Записи -----
+    # ----- Записи (апдейт: добавим получение услуг по записи) -----
     async def create_appointment(self, user_id: int, client_name: str, client_phone: str,
                                  app_date: date, app_time: time) -> int:
-        """Создаёт новую запись и возвращает её ID."""
         async with self.pool.acquire() as conn:
-            # Сохраняем пользователя
             await conn.execute("""
                 INSERT INTO users (user_id, username, full_name, phone)
                 VALUES ($1, '', $2, $3)
@@ -173,7 +178,6 @@ class Database:
                     full_name = EXCLUDED.full_name,
                     phone = EXCLUDED.phone
             """, user_id, client_name, client_phone)
-            # Создаём запись
             app_id = await conn.fetchval("""
                 INSERT INTO appointments (user_id, appointment_date, appointment_time, client_name, client_phone)
                 VALUES ($1, $2, $3, $4, $5)
@@ -182,8 +186,29 @@ class Database:
             logger.info(f"Appointment created: ID {app_id} for user {user_id} at {app_date} {app_time}")
             return app_id
 
+    async def add_services_to_appointment(self, appointment_id: int, service_ids: list[int]):
+        """Привязывает выбранные услуги к записи."""
+        async with self.pool.acquire() as conn:
+            for sid in service_ids:
+                await conn.execute("""
+                    INSERT INTO appointment_services (appointment_id, service_id)
+                    VALUES ($1, $2)
+                    ON CONFLICT DO NOTHING
+                """, appointment_id, sid)
+            logger.info(f"Services {service_ids} added to appointment {appointment_id}")
+
+    async def get_appointment_services(self, appointment_id: int):
+        """Возвращает список услуг для конкретной записи."""
+        async with self.pool.acquire() as conn:
+            rows = await conn.fetch("""
+                SELECT s.id, s.name, s.price
+                FROM appointment_services aps
+                JOIN services s ON aps.service_id = s.id
+                WHERE aps.appointment_id = $1
+            """, appointment_id)
+            return rows
+
     async def get_user_appointment(self, user_id: int):
-        """Возвращает последнюю активную запись пользователя (если есть)."""
         async with self.pool.acquire() as conn:
             row = await conn.fetchrow("""
                 SELECT * FROM appointments
@@ -194,30 +219,24 @@ class Database:
             return row
 
     async def cancel_appointment(self, appointment_id: int) -> bool:
-        """Отменяет запись по ID и освобождает слот."""
         async with self.pool.acquire() as conn:
-            # Получаем дату и время слота
             row = await conn.fetchrow("""
                 SELECT appointment_date, appointment_time FROM appointments
                 WHERE id = $1
             """, appointment_id)
             if row:
-                # Освобождаем слот
                 await self.free_slot(row['appointment_date'], row['appointment_time'])
-                # Удаляем запись
                 await conn.execute("DELETE FROM appointments WHERE id = $1", appointment_id)
                 logger.info(f"Appointment cancelled: ID {appointment_id}")
                 return True
             return False
 
     async def get_appointment_by_id(self, appointment_id: int):
-        """Возвращает данные записи по ID."""
         async with self.pool.acquire() as conn:
             return await conn.fetchrow("SELECT * FROM appointments WHERE id = $1", appointment_id)
 
-    # ----- Напоминания -----
+    # ----- Напоминания (без изменений) -----
     async def save_reminder(self, appointment_id: int, remind_at: datetime):
-        """Сохраняет информацию о запланированном напоминании."""
         async with self.pool.acquire() as conn:
             await conn.execute("""
                 INSERT INTO reminders (appointment_id, remind_at)
@@ -227,13 +246,11 @@ class Database:
             logger.debug(f"Reminder saved for appointment {appointment_id} at {remind_at}")
 
     async def delete_reminder(self, appointment_id: int):
-        """Удаляет запись о напоминании."""
         async with self.pool.acquire() as conn:
             await conn.execute("DELETE FROM reminders WHERE appointment_id = $1", appointment_id)
             logger.debug(f"Reminder deleted for appointment {appointment_id}")
 
     async def get_all_reminders(self):
-        """Возвращает все активные напоминания для восстановления после рестарта."""
         async with self.pool.acquire() as conn:
             rows = await conn.fetch("""
                 SELECT r.appointment_id, r.remind_at,
@@ -243,9 +260,42 @@ class Database:
             """)
             return rows
 
-    # ----- Просмотр расписания для админа -----
+    # ----- Услуги (прайс-лист) -----
+    async def get_all_services(self):
+        """Возвращает список всех услуг."""
+        async with self.pool.acquire() as conn:
+            rows = await conn.fetch("SELECT * FROM services ORDER BY id")
+            return rows
+
+    async def add_service(self, name: str, price: int):
+        """Добавляет новую услугу."""
+        async with self.pool.acquire() as conn:
+            try:
+                await conn.execute("""
+                    INSERT INTO services (name, price)
+                    VALUES ($1, $2)
+                """, name, price)
+                logger.info(f"Service added: {name} - {price} BYN")
+                return True
+            except asyncpg.exceptions.UniqueViolationError:
+                logger.warning(f"Service {name} already exists")
+                return False
+
+    async def delete_service(self, service_id: int):
+        """Удаляет услугу по ID."""
+        async with self.pool.acquire() as conn:
+            await conn.execute("DELETE FROM services WHERE id = $1", service_id)
+            logger.info(f"Service deleted: ID {service_id}")
+
+    async def update_service_price(self, service_id: int, new_price: int):
+        """Обновляет цену услуги."""
+        async with self.pool.acquire() as conn:
+            await conn.execute("UPDATE services SET price = $1 WHERE id = $2", new_price, service_id)
+            logger.info(f"Service {service_id} price updated to {new_price}")
+
+    # ----- Просмотр расписания для админа (с услугами) -----
     async def get_appointments_for_date(self, target_date: date):
-        """Возвращает все записи на указанную дату."""
+        """Возвращает все записи на указанную дату с услугами."""
         async with self.pool.acquire() as conn:
             rows = await conn.fetch("""
                 SELECT a.id, a.appointment_time, a.client_name, a.client_phone, u.user_id
@@ -254,4 +304,9 @@ class Database:
                 WHERE a.appointment_date = $1
                 ORDER BY a.appointment_time
             """, target_date)
-            return rows
+            # Для каждой записи добавим услуги
+            result = []
+            for r in rows:
+                services = await self.get_appointment_services(r['id'])
+                result.append({**r, 'services': services})
+            return result
