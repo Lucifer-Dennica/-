@@ -8,7 +8,8 @@ from database import Database
 from scheduler import ReminderScheduler
 from keyboards import (
     calendar_keyboard, time_slots_keyboard, services_keyboard,
-    confirm_services_keyboard, cancel_keyboard, main_menu, subscription_check_keyboard
+    confirm_services_keyboard, cancel_keyboard, main_menu,
+    subscription_check_keyboard
 )
 from states import AppointmentStates
 from utils import check_subscription
@@ -20,7 +21,6 @@ logger = logging.getLogger(__name__)
 # Начало записи (кнопка "Записаться")
 @router.message(F.text == "📅 Записаться")
 async def start_appointment(message: Message, state: FSMContext, bot):
-    # Проверка подписки
     if CHANNEL_ID:
         try:
             subscribed = await check_subscription(bot, message.from_user.id)
@@ -34,7 +34,6 @@ async def start_appointment(message: Message, state: FSMContext, bot):
             )
             return
 
-    # Проверка существующей записи
     db: Database = bot.db
     try:
         existing = await db.get_user_appointment(message.from_user.id)
@@ -49,7 +48,6 @@ async def start_appointment(message: Message, state: FSMContext, bot):
         )
         return
 
-    # Показываем календарь
     now = datetime.now()
     await state.set_state(AppointmentStates.choosing_date)
     await message.answer(
@@ -203,140 +201,141 @@ async def process_time_selection(callback: CallbackQuery, state: FSMContext, bot
     _, date_str, time_str = parts
     await state.update_data(appointment_date=date_str, appointment_time=time_str)
 
-    # Получаем список услуг для выбора
+    # Показываем список услуг для выбора
     db: Database = bot.db
     services = await db.get_all_services()
     if not services:
-        # Если услуг нет, пропускаем выбор и переходим к вводу имени
+        # Если услуг нет, пропускаем выбор
         await state.set_state(AppointmentStates.entering_name)
         try:
             await callback.message.edit_text(
                 "Введите ваше имя:",
                 reply_markup=cancel_keyboard()
             )
-        except Exception as e:
-            logger.error(f"Error editing message: {e}")
+        except TelegramBadRequest as e:
+            if "message is not modified" in str(e):
+                pass
+            else:
+                logger.error(f"Error editing message: {e}")
         await callback.answer()
         return
 
-    # Сохраняем выбранные услуги (пока пустой список)
-    await state.update_data(selected_services=[])
     await state.set_state(AppointmentStates.choosing_services)
+    # Инициализируем пустой список выбранных услуг
+    await state.update_data(selected_services=[])
     try:
         await callback.message.edit_text(
-            "Выберите услуги (можно несколько, нажимая на кнопки):",
+            "Выберите услуги (можно несколько):",
             reply_markup=services_keyboard(services, date_str, time_str)
         )
-    except Exception as e:
-        logger.error(f"Error showing services: {e}")
+    except TelegramBadRequest as e:
+        if "message is not modified" in str(e):
+            pass
+        else:
+            logger.error(f"Error editing message: {e}")
     try:
         await callback.answer()
-    except:
-        pass
+    except TelegramBadRequest as e:
+        if "query is too old" in str(e):
+            logger.warning("Callback query too old in process_time_selection")
 
-# Выбор услуги
-@router.callback_query(F.data.startswith("service_"), AppointmentStates.choosing_services)
-async def process_service_selection(callback: CallbackQuery, state: FSMContext, bot):
+# Выбор услуги (добавление в список)
+@router.callback_query(F.data.startswith("service_"))
+async def service_selected(callback: CallbackQuery, state: FSMContext, bot):
     parts = callback.data.split("_")
-    if len(parts) != 4:
-        await callback.answer()
+    if len(parts) < 4:
+        await callback.answer("Неверные данные")
         return
-    _, service_id_str, date_str, time_str = parts
-    service_id = int(service_id_str)
+    service_id = int(parts[1])
+    date_str = parts[2]
+    time_str = parts[3]
 
     data = await state.get_data()
     selected = data.get('selected_services', [])
-    if service_id in selected:
-        # Убираем из выбранных
-        selected.remove(service_id)
-        action_text = "услуга убрана"
-    else:
+    if service_id not in selected:
         selected.append(service_id)
-        action_text = "услуга добавлена"
+        await state.update_data(selected_services=selected)
+        await callback.answer("Услуга добавлена", show_alert=False)
+    else:
+        await callback.answer("Уже выбрано", show_alert=False)
 
-    await state.update_data(selected_services=selected)
-
+    # Обновляем клавиатуру (можно показать текущий выбор)
     db: Database = bot.db
     services = await db.get_all_services()
-    # Показываем обновлённый список
-    try:
-        await callback.message.edit_reply_markup(
-            reply_markup=services_keyboard(services, date_str, time_str)
-        )
-    except Exception as e:
-        logger.error(f"Error updating services keyboard: {e}")
-    await callback.answer(action_text, show_alert=False)
+    await callback.message.edit_reply_markup(
+        reply_markup=services_keyboard(services, date_str, time_str)
+    )
 
 # Продолжить без услуг
-@router.callback_query(F.data.startswith("noservice_"), AppointmentStates.choosing_services)
-async def process_no_service(callback: CallbackQuery, state: FSMContext):
+@router.callback_query(F.data.startswith("noservice_"))
+async def no_service(callback: CallbackQuery, state: FSMContext, bot):
     parts = callback.data.split("_")
-    if len(parts) != 3:
-        await callback.answer()
+    if len(parts) < 3:
+        await callback.answer("Неверные данные")
         return
-    _, date_str, time_str = parts
+    date_str = parts[1]
+    time_str = parts[2]
     await state.update_data(selected_services=[])
-    # Переходим к вводу имени
     await state.set_state(AppointmentStates.entering_name)
     try:
         await callback.message.edit_text(
             "Введите ваше имя:",
             reply_markup=cancel_keyboard()
         )
-    except Exception as e:
-        logger.error(f"Error editing message: {e}")
+    except TelegramBadRequest as e:
+        if "message is not modified" in str(e):
+            pass
+        else:
+            logger.error(f"Error editing message: {e}")
     await callback.answer()
 
-# Подтверждение выбранных услуг (кнопка "Подтвердить запись" после выбора услуг)
-@router.callback_query(F.data.startswith("confirm_appointment_"), AppointmentStates.choosing_services)
-async def confirm_services(callback: CallbackQuery, state: FSMContext):
+# Кнопка подтверждения записи (после выбора услуг)
+@router.callback_query(F.data.startswith("confirm_appointment_"))
+async def confirm_appointment(callback: CallbackQuery, state: FSMContext, bot):
     parts = callback.data.split("_")
-    if len(parts) != 4:
-        await callback.answer()
+    if len(parts) < 4:
+        await callback.answer("Неверные данные")
         return
-    _, _, date_str, time_str = parts
-    data = await state.get_data()
-    selected_ids = data.get('selected_services', [])
-
-    db: Database = callback.bot.db
-    services = await db.get_all_services()
-    selected_services = [s for s in services if s['id'] in selected_ids]
-    if selected_services:
-        total_price = sum(s['price'] for s in selected_services)
-        services_text = "\n".join([f"• {s['name']} — {s['price']} BYN" for s in selected_services])
-        text = (
-            f"📝 Вы выбрали услуги:\n{services_text}\n\n"
-            f"💵 Общая стоимость: {total_price} BYN\n\n"
-            f"Теперь введите ваше имя."
-        )
-    else:
-        text = "Вы не выбрали ни одной услуги. Введите ваше имя."
+    date_str = parts[2]
+    time_str = parts[3]
 
     await state.set_state(AppointmentStates.entering_name)
     try:
-        await callback.message.edit_text(text, reply_markup=cancel_keyboard())
-    except Exception as e:
-        logger.error(f"Error editing message: {e}")
+        await callback.message.edit_text(
+            "Введите ваше имя:",
+            reply_markup=cancel_keyboard()
+        )
+    except TelegramBadRequest as e:
+        if "message is not modified" in str(e):
+            pass
+        else:
+            logger.error(f"Error editing message: {e}")
     await callback.answer()
 
-# Выбор других услуг (возврат к списку)
-@router.callback_query(F.data.startswith("reselect_services_"), AppointmentStates.choosing_services)
+# Повторный выбор услуг
+@router.callback_query(F.data.startswith("reselect_services_"))
 async def reselect_services(callback: CallbackQuery, state: FSMContext, bot):
     parts = callback.data.split("_")
-    if len(parts) != 4:
-        await callback.answer()
+    if len(parts) < 4:
+        await callback.answer("Неверные данные")
         return
-    _, _, date_str, time_str = parts
+    date_str = parts[2]
+    time_str = parts[3]
+
     db: Database = bot.db
     services = await db.get_all_services()
     await state.set_state(AppointmentStates.choosing_services)
+    await state.update_data(selected_services=[])
     try:
         await callback.message.edit_text(
-            "Выберите услуги:",
+            "Выберите услуги (можно несколько):",
             reply_markup=services_keyboard(services, date_str, time_str)
         )
-    except Exception as e:
-        logger.error(f"Error editing message: {e}")
+    except TelegramBadRequest as e:
+        if "message is not modified" in str(e):
+            pass
+        else:
+            logger.error(f"Error editing message: {e}")
     await callback.answer()
 
 # Ввод имени
@@ -367,77 +366,122 @@ async def process_phone(message: Message, state: FSMContext):
     time_str = data.get('appointment_time')
     name = data.get('client_name')
     phone = data.get('client_phone')
-    selected_ids = data.get('selected_services', [])
+    selected_services = data.get('selected_services', [])
 
     if not all([date_str, time_str, name, phone]):
         await message.answer("❌ Сессия истекла. Начните запись заново.")
         await state.clear()
         return
 
+    # Получаем названия выбранных услуг
     db: Database = message.bot.db
-    services = await db.get_all_services()
-    selected_services = [s for s in services if s['id'] in selected_ids]
-
-    text = f"📝 Проверьте данные:\n\n📅 Дата: {date_str}\n⏰ Время: {time_str}\n👤 Имя: {name}\n📞 Телефон: {phone}\n"
+    services_list = []
+    total_price = 0
     if selected_services:
-        total_price = sum(s['price'] for s in selected_services)
-        services_text = "\n".join([f"• {s['name']} — {s['price']} BYN" for s in selected_services])
-        text += f"\n💅 Услуги:\n{services_text}\n💵 Итого: {total_price} BYN\n"
-    text += "\nВсё верно?"
+        all_services = await db.get_all_services()
+        services_by_id = {s['id']: s for s in all_services}
+        for sid in selected_services:
+            if sid in services_by_id:
+                services_list.append(services_by_id[sid]['name'])
+                total_price += services_by_id[sid]['price']
+
+    text = (
+        f"📝 Проверьте данные:\n\n"
+        f"📅 Дата: {date_str}\n"
+        f"⏰ Время: {time_str}\n"
+        f"👤 Имя: {name}\n"
+        f"📞 Телефон: {phone}\n"
+    )
+    if services_list:
+        text += f"💅 Услуги: {', '.join(services_list)}\n"
+        text += f"💰 Сумма: {total_price} BYN\n"
+    else:
+        text += f"💅 Услуги: не выбраны\n"
+
+    text += f"\nВсё верно?"
 
     await state.set_state(AppointmentStates.confirming)
     await message.answer(
         text,
-        reply_markup=confirm_services_keyboard(date_str, time_str)  # используем ту же клавиатуру подтверждения
+        reply_markup=confirm_services_keyboard(date_str, time_str)  # используем клавиатуру подтверждения
     )
 
-# Подтверждение записи (финальное)
-@router.callback_query(F.data.startswith("confirm_appointment_"), AppointmentStates.confirming)
-async def confirm_appointment(callback: CallbackQuery, state: FSMContext, bot):
+# Финальное подтверждение (старый обработчик confirm_ оставляем для совместимости, но фактически используем confirm_appointment_)
+@router.callback_query(F.data.startswith("confirm_"))
+async def final_confirm(callback: CallbackQuery, state: FSMContext, bot):
     parts = callback.data.split("_")
-    if len(parts) != 4:
-        await callback.answer()
+    if len(parts) != 3:
+        await callback.answer("Неверные данные")
         return
-    _, _, date_str, time_str = parts
+    date_str = parts[1]
+    time_str = parts[2]
+
+    # Проверка на "cancel"
+    if date_str == "cancel" or time_str == "cancel":
+        try:
+            await callback.answer()
+        except:
+            pass
+        return
 
     try:
         slot_date = datetime.strptime(date_str, "%Y-%m-%d").date()
         slot_time = datetime.strptime(time_str, "%H:%M").time()
     except ValueError:
-        await callback.answer("Неверный формат даты или времени")
+        try:
+            await callback.answer("Неверный формат даты или времени")
+        except:
+            pass
         return
 
     user_id = callback.from_user.id
     data = await state.get_data()
     client_name = data.get('client_name')
     client_phone = data.get('client_phone')
-    selected_ids = data.get('selected_services', [])
+    selected_services = data.get('selected_services', [])
 
     if not client_name or not client_phone:
-        await callback.message.edit_text("❌ Сессия истекла, начните запись заново.")
+        try:
+            await callback.message.edit_text("❌ Сессия истекла, начните запись заново.")
+        except:
+            pass
         await state.clear()
-        await callback.answer()
+        try:
+            await callback.answer()
+        except:
+            pass
         return
 
     db: Database = bot.db
 
-    # Проверка доступности слота
     try:
         available = await db.get_available_slots(slot_date)
+        logger.info(f"Checking slot {slot_date} {slot_time}. Available: {[s.strftime('%H:%M') for s in available]}")
     except Exception as e:
         logger.error(f"Error checking available slots: {e}")
         await callback.message.answer("❌ Ошибка при проверке доступности. Попробуйте позже.")
         await state.clear()
-        await callback.answer()
+        try:
+            await callback.answer()
+        except:
+            pass
         return
 
     if slot_time not in available:
-        await callback.message.edit_text("❌ К сожалению, это время уже занято. Попробуйте выбрать другое.")
+        try:
+            await callback.message.edit_text(
+                "❌ К сожалению, это время уже занято. Попробуйте выбрать другое."
+            )
+        except:
+            pass
         await state.clear()
-        await callback.answer()
+        try:
+            await callback.answer()
+        except:
+            pass
         return
 
-    # Создание записи
+    # Создаём запись
     try:
         app_id = await db.create_appointment(
             user_id=user_id,
@@ -446,11 +490,12 @@ async def confirm_appointment(callback: CallbackQuery, state: FSMContext, bot):
             app_date=slot_date,
             app_time=slot_time
         )
+        # Помечаем слот как занятый
         await db.occupy_slot(slot_date, slot_time)
 
-        # Привязываем выбранные услуги
-        if selected_ids:
-            await db.add_services_to_appointment(app_id, selected_ids)
+        # Привязываем услуги
+        if selected_services:
+            await db.add_services_to_appointment(app_id, selected_services)
 
         # Планируем напоминание
         appointment_datetime = datetime.combine(slot_date, slot_time)
@@ -461,64 +506,85 @@ async def confirm_appointment(callback: CallbackQuery, state: FSMContext, bot):
             scheduler: ReminderScheduler = bot.scheduler
             try:
                 await scheduler.schedule_reminder(app_id, remind_at)
+                logger.info(f"Reminder scheduled for appointment {app_id} at {remind_at}")
             except Exception as e:
                 logger.error(f"Failed to schedule reminder: {e}")
 
-        # Уведомление админу с услугами
-        services_info = ""
-        if selected_ids:
-            services = await db.get_all_services()
-            selected = [s for s in services if s['id'] in selected_ids]
-            services_info = "\n".join([f"• {s['name']} — {s['price']} BYN" for s in selected])
-        admin_text = (
-            f"✅ Новая запись!\n\n"
-            f"👤 Клиент: {client_name}\n"
-            f"📞 Телефон: {client_phone}\n"
-            f"📅 Дата: {date_str}\n"
-            f"⏰ Время: {time_str}\n"
-            f"💅 Услуги:\n{services_info if services_info else 'Не выбраны'}\n"
-            f"🆔 ID: {app_id}"
-        )
+        # Уведомление админу
         try:
+            admin_text = (
+                f"✅ Новая запись!\n\n"
+                f"👤 Клиент: {client_name}\n"
+                f"📞 Телефон: {client_phone}\n"
+                f"📅 Дата: {date_str}\n"
+                f"⏰ Время: {time_str}\n"
+            )
+            if selected_services:
+                # Получим названия услуг
+                all_services = await db.get_all_services()
+                services_by_id = {s['id']: s for s in all_services}
+                services_names = [services_by_id[sid]['name'] for sid in selected_services if sid in services_by_id]
+                admin_text += f"💅 Услуги: {', '.join(services_names)}\n"
+            admin_text += f"🆔 ID: {app_id}"
             await bot.send_message(ADMIN_ID, admin_text)
+            logger.info(f"Admin notified for appointment {app_id}")
         except Exception as e:
             logger.error(f"Failed to notify admin: {e}")
 
         # Отправка в канал
         if CHANNEL_ID:
             try:
-                channel_text = f"📅 Запись на {date_str} в {time_str}\n👤 Клиент: {client_name}"
+                channel_text = (
+                    f"📅 Запись на {date_str} в {time_str}\n"
+                    f"👤 Клиент: {client_name}"
+                )
+                if selected_services:
+                    all_services = await db.get_all_services()
+                    services_by_id = {s['id']: s for s in all_services}
+                    services_names = [services_by_id[sid]['name'] for sid in selected_services if sid in services_by_id]
+                    channel_text += f"\n💅 Услуги: {', '.join(services_names)}"
                 await bot.send_message(CHANNEL_ID, channel_text)
+                logger.info(f"Channel notified for appointment {app_id}")
             except Exception as e:
                 logger.error(f"Failed to send to channel: {e}")
 
         # Подтверждение пользователю
-        await callback.message.edit_text(
-            f"✅ Вы успешно записаны!\nДата: {date_str}\nВремя: {time_str}\nЖдём вас ❤️"
-        )
+        try:
+            await callback.message.edit_text(
+                f"✅ Вы успешно записаны!\n"
+                f"Дата: {date_str}\n"
+                f"Время: {time_str}\n\n"
+                f"Ждём вас ❤️"
+            )
+        except Exception as e:
+            logger.error(f"Error sending confirmation: {e}")
         await state.clear()
 
     except Exception as e:
         logger.error(f"Error creating appointment: {e}", exc_info=True)
-        await callback.message.edit_text("❌ Произошла ошибка. Попробуйте позже.")
+        try:
+            await callback.message.edit_text("❌ Произошла ошибка. Попробуйте позже.")
+        except:
+            pass
         await state.clear()
 
     try:
         await callback.answer()
     except TelegramBadRequest as e:
         if "query is too old" in str(e):
-            logger.warning("Callback query too old in confirm_appointment")
+            logger.warning("Callback query too old in final_confirm")
 
-# Отмена FSM через inline-кнопку
+# Отмена FSM
 @router.callback_query(F.data == "cancel_fsm")
 async def cancel_fsm(callback: CallbackQuery, state: FSMContext):
     await state.clear()
     try:
         await callback.message.edit_text("Действие отменено.")
-    except:
-        pass
+    except Exception as e:
+        logger.error(f"Error editing message in cancel_fsm: {e}")
     await callback.message.answer("Выберите действие:", reply_markup=main_menu())
     try:
         await callback.answer()
-    except:
-        pass
+    except TelegramBadRequest as e:
+        if "query is too old" in str(e):
+            logger.warning("Callback query too old in cancel_fsm")
