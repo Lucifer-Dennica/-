@@ -277,7 +277,7 @@ async def admin_date_selected(callback: CallbackQuery, state: FSMContext, bot):
             if "query is too old" in str(e):
                 logger.warning("Callback query too old in admin_date_selected")
 
-# Обработка кнопок админ-панели
+# Обработка кнопок админ-панели (исправлено)
 @router.callback_query(F.data.startswith("admin_"))
 async def admin_actions(callback: CallbackQuery, state: FSMContext):
     if not is_admin(callback.from_user.id):
@@ -285,14 +285,13 @@ async def admin_actions(callback: CallbackQuery, state: FSMContext):
         return
 
     try:
-        # Разбираем callback_data: например "admin_add_slots" -> action = "add", но у нас есть "admin_manage_prices" -> action = "manage"
         parts = callback.data.split("_")
         if len(parts) < 2:
             await callback.answer("Неизвестная команда")
             return
         prefix = parts[0]  # "admin"
         action = parts[1]  # например "add", "remove", "manage"
-        logger.info(f"Admin action: {action}")
+        logger.info(f"Admin action: {action}, full callback: {callback.data}")
 
         now = datetime.now()
 
