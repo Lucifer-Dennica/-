@@ -2,34 +2,26 @@ from aiogram.fsm.state import State, StatesGroup
 
 # Состояния для записи на приём
 class AppointmentStates(StatesGroup):
-    choosing_date = State()      # Выбор даты
-    choosing_time = State()      # Выбор времени
-    choosing_services = State()  # Выбор услуг (новое)
-    entering_name = State()      # Ввод имени
-    entering_phone = State()     # Ввод телефона
-    confirming = State()         # Подтверждение
+    choosing_date = State()
+    choosing_time = State()
+    choosing_services = State()      # новое состояние
+    entering_name = State()
+    entering_phone = State()
+    confirming = State()
 
 # Состояния для админ-панели
 class AdminStates(StatesGroup):
-    # Добавление слотов
-    adding_slots_date = State()          # Ввод даты
-    adding_slots_time = State()          # Ввод времени (циклически)
-    # Удаление слота
-    removing_slot_date = State()         # Выбор даты
-    removing_slot_time = State()         # Выбор времени
-    # Закрытие дня
-    closing_day_date = State()           # Ввод даты
-    # Просмотр расписания
-    viewing_schedule_date = State()      # Ввод даты
-    # Отмена записи клиента
-    canceling_appointment = State()      # Ввод ID записи
-    # Удаление диапазона времени
-    deleting_range_date = State()        # Ввод даты
-    deleting_range_start = State()       # Ввод начала интервала
-    deleting_range_end = State()         # Ввод конца интервала
-    # Управление прайсом
-    adding_service_name = State()        # Ввод названия услуги
-    adding_service_price = State()       # Ввод цены
-    editing_service_select = State()     # Выбор услуги для редактирования
-    editing_service_price = State()      # Ввод новой цены
-    deleting_service_select = State()    # Выбор услуги для удаления
+    adding_slots_date = State()
+    adding_slots_time = State()
+    removing_slot_date = State()
+    removing_slot_time = State()
+    closing_day_date = State()
+    viewing_schedule_date = State()
+    canceling_appointment = State()
+    deleting_range_date = State()
+    deleting_range_start = State()
+    deleting_range_end = State()
+    # Новые состояния для управления прайсом
+    adding_service_name = State()
+    adding_service_price = State()
+    editing_service_price = State()
