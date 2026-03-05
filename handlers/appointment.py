@@ -239,7 +239,7 @@ async def process_time_selection(callback: CallbackQuery, state: FSMContext, bot
         if "query is too old" in str(e):
             logger.warning("Callback query too old in process_time_selection")
 
-# Переключение выбора услуги (новая логика)
+# Переключение выбора услуги
 @router.callback_query(F.data.startswith("toggle_service_"))
 async def toggle_service(callback: CallbackQuery, state: FSMContext, bot):
     parts = callback.data.split("_")
