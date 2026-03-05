@@ -31,7 +31,7 @@ async def admin_cmd(message: Message):
         reply_markup=admin_panel()
     )
 
-# Обработка навигации по календарю (для всех админ-действий)
+# Обработка навигации по календарю
 @router.callback_query(F.data.startswith("month_"))
 async def process_calendar_nav(callback: CallbackQuery, state: FSMContext):
     try:
@@ -68,7 +68,7 @@ async def cancel_calendar(callback: CallbackQuery, state: FSMContext):
         if "query is too old" in str(e):
             logger.warning("Callback query too old in cancel_calendar")
 
-# Общий обработчик для выбора даты в админке (префикс admin_date_)
+# Обработка выбора даты в админке
 @router.callback_query(F.data.startswith("admin_date_"))
 async def admin_date_selected(callback: CallbackQuery, state: FSMContext, bot):
     try:
@@ -85,50 +85,32 @@ async def admin_date_selected(callback: CallbackQuery, state: FSMContext, bot):
             await callback.answer("Неверный формат даты")
             return
 
-        current_state = await state.get_state()
         data = await state.get_data()
         action = data.get('admin_action')
-        logger.info(f"Admin date selected: {date_str}, action={action}, state={current_state}")
+        logger.info(f"Admin date selected: {date_str}, action={action}")
 
         if not action:
             logger.warning("No admin_action in state")
-            try:
-                await callback.message.edit_text("Действие не определено. Начните заново.")
-            except TelegramBadRequest as e:
-                if "message is not modified" in str(e):
-                    pass
-                else:
-                    raise
+            await callback.message.edit_text("Действие не определено. Начните заново.")
             await callback.message.answer("Панель администратора:", reply_markup=admin_panel())
             await state.clear()
             await callback.answer()
             return
 
+        # Обработка в зависимости от действия
         if action == 'add_slots':
             await state.update_data(slot_date=date_str)
             await state.set_state(AdminStates.adding_slots_time)
-            try:
-                await callback.message.edit_text(
-                    "Введите время слота в формате ЧЧ:ММ (например, 10:00).\n"
-                    "Когда закончите, введите /done",
-                    reply_markup=cancel_keyboard()
-                )
-            except TelegramBadRequest as e:
-                if "message is not modified" in str(e):
-                    pass
-                else:
-                    raise
+            await callback.message.edit_text(
+                "Введите время слота в формате ЧЧ:ММ (например, 10:00).\n"
+                "Когда закончите, введите /done",
+                reply_markup=cancel_keyboard()
+            )
         elif action == 'remove_slot':
             db: Database = bot.db
             slots = await db.get_all_slots(selected_date)
             if not slots:
-                try:
-                    await callback.message.edit_text("На этот день нет слотов.")
-                except TelegramBadRequest as e:
-                    if "message is not modified" in str(e):
-                        pass
-                    else:
-                        raise
+                await callback.message.edit_text("На этот день нет слотов.")
                 await state.clear()
                 await callback.message.answer("Панель администратора:", reply_markup=admin_panel())
                 await callback.answer()
@@ -139,49 +121,25 @@ async def admin_date_selected(callback: CallbackQuery, state: FSMContext, bot):
                     time_str = slot['slot_time'].strftime("%H:%M")
                     builder.button(text=time_str, callback_data=f"remove_{date_str}_{time_str}")
             if not builder.buttons:
-                try:
-                    await callback.message.edit_text("Нет доступных слотов для удаления.")
-                except TelegramBadRequest as e:
-                    if "message is not modified" in str(e):
-                        pass
-                    else:
-                        raise
+                await callback.message.edit_text("Нет доступных слотов для удаления.")
                 await state.clear()
                 await callback.message.answer("Панель администратора:", reply_markup=admin_panel())
                 await callback.answer()
                 return
             builder.adjust(3)
             builder.row(InlineKeyboardButton(text="❌ Отмена", callback_data="cancel_fsm"))
-            try:
-                await callback.message.edit_text("Выберите слот для удаления:", reply_markup=builder.as_markup())
-            except TelegramBadRequest as e:
-                if "message is not modified" in str(e):
-                    pass
-                else:
-                    raise
+            await callback.message.edit_text("Выберите слот для удаления:", reply_markup=builder.as_markup())
             await state.clear()
         elif action == 'close_day':
             db: Database = bot.db
             await db.close_day(selected_date)
-            try:
-                await callback.message.edit_text(f"День {date_str} закрыт (все слоты помечены как недоступные).")
-            except TelegramBadRequest as e:
-                if "message is not modified" in str(e):
-                    pass
-                else:
-                    raise
+            await callback.message.edit_text(f"День {date_str} закрыт (все слоты помечены как недоступные).")
             await state.clear()
             await callback.message.answer("Панель администратора:", reply_markup=admin_panel())
         elif action == 'open_day':
             db: Database = bot.db
             await db.open_day(selected_date)
-            try:
-                await callback.message.edit_text(f"День {date_str} открыт (все слоты помечены как доступные).")
-            except TelegramBadRequest as e:
-                if "message is not modified" in str(e):
-                    pass
-                else:
-                    raise
+            await callback.message.edit_text(f"День {date_str} открыт (все слоты помечены как доступные).")
             await state.clear()
             await callback.message.answer("Панель администратора:", reply_markup=admin_panel())
         elif action == 'view_schedule':
@@ -194,13 +152,7 @@ async def admin_date_selected(callback: CallbackQuery, state: FSMContext, bot):
                     text += f"{slot['slot_time'].strftime('%H:%M')} {status}\n"
             else:
                 text += "Нет слотов.\n"
-            try:
-                await callback.message.edit_text(text)
-            except TelegramBadRequest as e:
-                if "message is not modified" in str(e):
-                    pass
-                else:
-                    raise
+            await callback.message.edit_text(text)
             apps = await db.get_appointments_for_date(selected_date)
             if apps:
                 text2 = "📝 Записи:\n"
@@ -214,60 +166,32 @@ async def admin_date_selected(callback: CallbackQuery, state: FSMContext, bot):
         elif action == 'delete_range':
             await state.update_data(range_date=date_str)
             await state.set_state(AdminStates.deleting_range_start)
-            try:
-                await callback.message.edit_text(
-                    "Введите начало интервала (ЧЧ:ММ), например 15:00:",
-                    reply_markup=cancel_keyboard()
-                )
-            except TelegramBadRequest as e:
-                if "message is not modified" in str(e):
-                    pass
-                else:
-                    raise
+            await callback.message.edit_text(
+                "Введите начало интервала (ЧЧ:ММ), например 15:00:",
+                reply_markup=cancel_keyboard()
+            )
         elif action == 'view_clients':
             db: Database = bot.db
             apps = await db.get_appointments_for_date(selected_date)
             if not apps:
-                try:
-                    await callback.message.edit_text(f"На {date_str} записей нет.")
-                except TelegramBadRequest as e:
-                    if "message is not modified" in str(e):
-                        pass
-                    else:
-                        raise
+                await callback.message.edit_text(f"На {date_str} записей нет.")
             else:
                 text = f"📋 Клиенты на {date_str}:\n\n"
                 for app in apps:
                     services = await db.get_appointment_services(app['id'])
                     services_str = ", ".join([s['name'] for s in services]) if services else "нет услуг"
                     text += f"⏰ {app['appointment_time']} – {app['client_name']}, {app['client_phone']} (ID {app['id']})\n   Услуги: {services_str}\n"
-                try:
-                    await callback.message.edit_text(text)
-                except TelegramBadRequest as e:
-                    if "message is not modified" in str(e):
-                        pass
-                    else:
-                        raise
+                await callback.message.edit_text(text)
             await state.clear()
             await callback.message.answer("Панель администратора:", reply_markup=admin_panel())
         else:
             logger.warning(f"Unknown action: {action}")
-            try:
-                await callback.message.edit_text("Неизвестное действие.")
-            except TelegramBadRequest as e:
-                if "message is not modified" in str(e):
-                    pass
-                else:
-                    raise
+            await callback.message.edit_text("Неизвестное действие.")
             await state.clear()
             await callback.message.answer("Панель администратора:", reply_markup=admin_panel())
-
     except Exception as e:
         logger.error(f"Error in admin_date_selected: {e}", exc_info=True)
-        try:
-            await callback.message.edit_text("❌ Произошла внутренняя ошибка. Попробуйте снова.")
-        except:
-            pass
+        await callback.message.edit_text("❌ Произошла внутренняя ошибка. Попробуйте снова.")
         await state.clear()
         await callback.message.answer("Панель администратора:", reply_markup=admin_panel())
     finally:
@@ -277,7 +201,7 @@ async def admin_date_selected(callback: CallbackQuery, state: FSMContext, bot):
             if "query is too old" in str(e):
                 logger.warning("Callback query too old in admin_date_selected")
 
-# Обработка кнопок админ-панели (основное меню) — исправлено для точной маршрутизации
+# Обработка кнопок админ-панели (основное меню) — точная маршрутизация
 @router.callback_query(F.data.startswith("admin_"))
 async def admin_actions(callback: CallbackQuery, state: FSMContext):
     if not is_admin(callback.from_user.id):
@@ -290,7 +214,7 @@ async def admin_actions(callback: CallbackQuery, state: FSMContext):
 
         now = datetime.now()
 
-        # Сначала проверяем специфические действия для прайса (точное совпадение)
+        # Действия для прайса (точное совпадение)
         if full_callback == "admin_add_service":
             await add_service_start(callback, state)
         elif full_callback == "admin_list_services":
@@ -554,7 +478,7 @@ async def prices_back(callback: CallbackQuery, state: FSMContext):
         else:
             raise
 
-# ----- Удаление конкретного слота (выбранного из списка) -----
+# ----- Удаление конкретного слота -----
 @router.callback_query(F.data.startswith("remove_"))
 async def remove_slot_confirm(callback: CallbackQuery, bot):
     try:
@@ -564,13 +488,7 @@ async def remove_slot_confirm(callback: CallbackQuery, bot):
         slot_time = datetime.strptime(time_str, "%H:%M").time()
 
         await db.delete_time_slot(slot_date, slot_time)
-        try:
-            await callback.message.edit_text(f"Слот {time_str} удалён.")
-        except TelegramBadRequest as e:
-            if "message is not modified" in str(e):
-                pass
-            else:
-                raise
+        await callback.message.edit_text(f"Слот {time_str} удалён.")
         await callback.message.answer("Панель администратора:", reply_markup=admin_panel())
     except Exception as e:
         logger.error(f"Error removing slot: {e}", exc_info=True)
@@ -609,7 +527,7 @@ async def add_slots_time(message: Message, state: FSMContext, bot):
         await message.answer("❌ Ошибка при добавлении слота.")
         await state.clear()
 
-# ----- Удаление диапазона времени (ввод начала и конца) -----
+# ----- Удаление диапазона времени -----
 @router.message(AdminStates.deleting_range_start)
 async def delete_range_start(message: Message, state: FSMContext):
     try:
