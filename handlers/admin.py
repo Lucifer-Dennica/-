@@ -277,7 +277,7 @@ async def admin_date_selected(callback: CallbackQuery, state: FSMContext, bot):
             if "query is too old" in str(e):
                 logger.warning("Callback query too old in admin_date_selected")
 
-# Обработка кнопок админ-панели (основное меню)
+# Обработка кнопок админ-панели (основное меню) — исправлено для точной маршрутизации
 @router.callback_query(F.data.startswith("admin_"))
 async def admin_actions(callback: CallbackQuery, state: FSMContext):
     if not is_admin(callback.from_user.id):
@@ -285,77 +285,78 @@ async def admin_actions(callback: CallbackQuery, state: FSMContext):
         return
 
     try:
-        parts = callback.data.split("_")
-        if len(parts) < 2:
-            await callback.answer("Неизвестная команда")
-            return
-        action = parts[1]
-        logger.info(f"Admin action: {action}, full callback: {callback.data}")
+        full_callback = callback.data
+        logger.info(f"Admin action callback: {full_callback}")
 
         now = datetime.now()
 
-        # Основные действия со слотами и днями
-        if action == "add":
+        # Сначала проверяем специфические действия для прайса (точное совпадение)
+        if full_callback == "admin_add_service":
+            await add_service_start(callback, state)
+        elif full_callback == "admin_list_services":
+            await list_services(callback, callback.bot)
+        elif full_callback == "admin_edit_service":
+            await edit_service_start(callback, callback.bot)
+        elif full_callback == "admin_delete_service":
+            await delete_service_start(callback, callback.bot)
+        elif full_callback == "admin_prices_back":
+            await prices_back(callback, state)
+        # Действия со слотами и днями (проверяем по второму слову, но они более специфичны)
+        elif full_callback == "admin_add_slots":
             await state.update_data(admin_action='add_slots')
             await callback.message.edit_text(
                 "Выберите дату для добавления слотов:",
                 reply_markup=admin_calendar_keyboard(now.year, now.month)
             )
-        elif action == "remove":
+        elif full_callback == "admin_remove_slot":
             await state.update_data(admin_action='remove_slot')
             await callback.message.edit_text(
                 "Выберите дату, на которой нужно удалить слот:",
                 reply_markup=admin_calendar_keyboard(now.year, now.month)
             )
-        elif action == "close":
+        elif full_callback == "admin_close_day":
             await state.update_data(admin_action='close_day')
             await callback.message.edit_text(
                 "Выберите дату, которую нужно закрыть:",
                 reply_markup=admin_calendar_keyboard(now.year, now.month)
             )
-        elif action == "open":
+        elif full_callback == "admin_open_day":
             await state.update_data(admin_action='open_day')
             await callback.message.edit_text(
                 "Выберите дату, которую нужно открыть:",
                 reply_markup=admin_calendar_keyboard(now.year, now.month)
             )
-        elif action == "view":
+        elif full_callback == "admin_view_schedule":
             await state.update_data(admin_action='view_schedule')
             await callback.message.edit_text(
                 "Выберите дату для просмотра расписания:",
                 reply_markup=admin_calendar_keyboard(now.year, now.month)
             )
-        elif action == "cancel":
+        elif full_callback == "admin_cancel_appointment":
             await state.set_state(AdminStates.canceling_appointment)
             await callback.message.edit_text(
                 "Введите ID записи, которую нужно отменить:",
                 reply_markup=cancel_keyboard()
             )
-        elif action == "delete":
+        elif full_callback == "admin_delete_range":
             await state.update_data(admin_action='delete_range')
             await callback.message.edit_text(
                 "Выберите дату для удаления диапазона:",
                 reply_markup=admin_calendar_keyboard(now.year, now.month)
             )
-        elif action == "view_clients":
+        elif full_callback == "admin_view_clients":
             await state.update_data(admin_action='view_clients')
             await callback.message.edit_text(
                 "Выберите дату для просмотра клиентов:",
                 reply_markup=admin_calendar_keyboard(now.year, now.month)
             )
-        # Действия для управления прайсом — вызываем соответствующие функции
-        elif action == "add_service":
-            await add_service_start(callback, state)
-        elif action == "list_services":
-            await list_services(callback, callback.bot)
-        elif action == "edit_service":
-            await edit_service_start(callback, callback.bot)
-        elif action == "delete_service":
-            await delete_service_start(callback, callback.bot)
-        elif action == "prices_back":
-            await prices_back(callback, state)
+        elif full_callback == "admin_manage_prices":
+            await callback.message.edit_text(
+                "Управление прайс-листом:",
+                reply_markup=admin_prices_keyboard()
+            )
         else:
-            logger.warning(f"Unknown admin action: {action}")
+            logger.warning(f"Unknown admin callback: {full_callback}")
             await callback.answer("Неизвестная команда")
     except Exception as e:
         logger.error(f"Error in admin_actions: {e}", exc_info=True)
