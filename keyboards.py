@@ -62,18 +62,69 @@ def time_slots_keyboard(slots, date_str):
     builder.row(InlineKeyboardButton(text="🔙 Назад к календарю", callback_data="back_to_calendar"))
     return builder.as_markup()
 
-# ----- Админ-панель (обновлённая) -----
+# ----- Клавиатура выбора услуг (для клиента) -----
+def services_keyboard(services, date_str, time_str):
+    """
+    services: список словарей [{'id': 1, 'name': 'Френч', 'price': 1000}, ...]
+    date_str, time_str: для callback'ов при подтверждении
+    """
+    builder = InlineKeyboardBuilder()
+    for s in services:
+        builder.button(
+            text=f"{s['name']} — {s['price']} BYN",
+            callback_data=f"service_{s['id']}_{date_str}_{time_str}"
+        )
+    builder.adjust(1)
+    builder.row(InlineKeyboardButton(text="✅ Продолжить без услуг", callback_data=f"noservice_{date_str}_{time_str}"))
+    builder.row(InlineKeyboardButton(text="❌ Отмена", callback_data="cancel_fsm"))
+    return builder.as_markup()
+
+# ----- Клавиатура подтверждения выбранных услуг (после выбора) -----
+def confirm_services_keyboard(date_str, time_str):
+    builder = InlineKeyboardBuilder()
+    builder.button(text="✅ Подтвердить запись", callback_data=f"confirm_appointment_{date_str}_{time_str}")
+    builder.button(text="🔄 Выбрать другие услуги", callback_data=f"reselect_services_{date_str}_{time_str}")
+    builder.button(text="❌ Отмена", callback_data="cancel_fsm")
+    builder.adjust(1)
+    return builder.as_markup()
+
+# ----- Админ-панель (обновлённая: добавлены кнопки для прайса) -----
 def admin_panel():
     builder = InlineKeyboardBuilder()
     builder.button(text="➕ Добавить слоты", callback_data="admin_add_slots")
     builder.button(text="➖ Удалить слот", callback_data="admin_remove_slot")
     builder.button(text="📅 Закрыть день", callback_data="admin_close_day")
-    builder.button(text="🔓 Открыть день", callback_data="admin_open_day")   # Новая кнопка
+    builder.button(text="🔓 Открыть день", callback_data="admin_open_day")
     builder.button(text="📋 Просмотр расписания", callback_data="admin_view_schedule")
     builder.button(text="❌ Отменить запись клиента", callback_data="admin_cancel_appointment")
     builder.button(text="🗑 Удалить диапазон времени", callback_data="admin_delete_range")
     builder.button(text="📋 Клиенты", callback_data="admin_view_clients")
+    builder.button(text="💰 Управление прайсом", callback_data="admin_manage_prices")
     builder.adjust(2)
+    return builder.as_markup()
+
+# ----- Клавиатура управления прайсом (админка) -----
+def admin_prices_keyboard():
+    builder = InlineKeyboardBuilder()
+    builder.button(text="➕ Добавить услугу", callback_data="admin_add_service")
+    builder.button(text="✏️ Редактировать цену", callback_data="admin_edit_service")
+    builder.button(text="❌ Удалить услугу", callback_data="admin_delete_service")
+    builder.button(text="📋 Просмотр услуг", callback_data="admin_list_services")
+    builder.button(text="🔙 Назад", callback_data="admin_back")
+    builder.adjust(2)
+    return builder.as_markup()
+
+# ----- Клавиатура для выбора услуги из списка (админка) -----
+def admin_services_list_keyboard(services, action_prefix):
+    """
+    services: список услуг
+    action_prefix: например, 'edit_' или 'delete_'
+    """
+    builder = InlineKeyboardBuilder()
+    for s in services:
+        builder.button(text=f"{s['name']} — {s['price']} BYN", callback_data=f"{action_prefix}{s['id']}")
+    builder.adjust(1)
+    builder.row(InlineKeyboardButton(text="🔙 Назад", callback_data="admin_prices_back"))
     return builder.as_markup()
 
 # ----- Кнопка отмены для FSM -----
@@ -82,7 +133,7 @@ def cancel_keyboard():
     builder.button(text="❌ Отмена", callback_data="cancel_fsm")
     return builder.as_markup()
 
-# ----- Кнопка подтверждения записи -----
+# ----- Кнопка подтверждения записи (старая, можно оставить для совместимости) -----
 def confirm_appointment_keyboard(date_str, time_str):
     builder = InlineKeyboardBuilder()
     builder.button(text="✅ Подтвердить", callback_data=f"confirm_{date_str}_{time_str}")
