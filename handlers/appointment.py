@@ -66,7 +66,9 @@ async def process_calendar_nav(callback: CallbackQuery, state: FSMContext):
             reply_markup=calendar_keyboard(int(year), int(month))
         )
     except TelegramBadRequest as e:
-        if "message is not modified" not in str(e):
+        if "message is not modified" in str(e):
+            pass
+        else:
             logger.error(f"Calendar nav error: {e}")
     except Exception as e:
         logger.error(f"Calendar nav error: {e}")
@@ -93,6 +95,8 @@ async def cancel_calendar(callback: CallbackQuery, state: FSMContext):
     except TelegramBadRequest as e:
         if "query is too old" in str(e):
             logger.warning("Callback query too old in cancel_calendar")
+        else:
+            logger.error(f"Error in callback.answer: {e}")
 
 # Выбор даты
 @router.callback_query(F.data.startswith("date_"))
@@ -128,6 +132,7 @@ async def process_date_selection(callback: CallbackQuery, state: FSMContext, bot
     db: Database = bot.db
     try:
         slots = await db.get_available_slots(selected_date)
+        logger.info(f"Date {date_str}: found {len(slots)} available slots: {[s.strftime('%H:%M') for s in slots]}")
     except Exception as e:
         logger.error(f"Database error in get_available_slots: {e}")
         await callback.message.answer("❌ Ошибка при получении слотов. Попробуйте позже.")
@@ -168,8 +173,11 @@ async def process_date_selection(callback: CallbackQuery, state: FSMContext, bot
             logger.error(f"Error editing message: {e}")
     try:
         await callback.answer()
-    except:
-        pass
+    except TelegramBadRequest as e:
+        if "query is too old" in str(e):
+            logger.warning("Callback query too old in process_date_selection")
+        else:
+            logger.error(f"Error in callback.answer: {e}")
 
 # Назад к календарю
 @router.callback_query(F.data == "back_to_calendar")
@@ -188,8 +196,9 @@ async def back_to_calendar(callback: CallbackQuery, state: FSMContext):
             logger.error(f"Error editing message: {e}")
     try:
         await callback.answer()
-    except:
-        pass
+    except TelegramBadRequest as e:
+        if "query is too old" in str(e):
+            logger.warning("Callback query too old in back_to_calendar")
 
 # Выбор времени
 @router.callback_query(F.data.startswith("time_"))
@@ -219,8 +228,9 @@ async def process_time_selection(callback: CallbackQuery, state: FSMContext, bot
             logger.error(f"Error editing message: {e}")
     try:
         await callback.answer()
-    except:
-        pass
+    except TelegramBadRequest as e:
+        if "query is too old" in str(e):
+            logger.warning("Callback query too old in process_time_selection")
 
 # Ввод имени
 @router.message(AppointmentStates.entering_name)
@@ -325,6 +335,7 @@ async def confirm_appointment(callback: CallbackQuery, state: FSMContext, bot):
     # Проверяем доступность слота (на случай двойного бронирования)
     try:
         available = await db.get_available_slots(slot_date)
+        logger.info(f"Checking slot {slot_date} {slot_time}. Available: {[s.strftime('%H:%M') for s in available]}")
     except Exception as e:
         logger.error(f"Error checking available slots: {e}")
         await callback.message.answer("❌ Ошибка при проверке доступности. Попробуйте позже.")
@@ -370,6 +381,7 @@ async def confirm_appointment(callback: CallbackQuery, state: FSMContext, bot):
             scheduler: ReminderScheduler = bot.scheduler
             try:
                 await scheduler.schedule_reminder(app_id, remind_at)
+                logger.info(f"Reminder scheduled for appointment {app_id} at {remind_at}")
             except Exception as e:
                 logger.error(f"Failed to schedule reminder: {e}")
 
@@ -384,6 +396,7 @@ async def confirm_appointment(callback: CallbackQuery, state: FSMContext, bot):
                 f"🆔 ID: {app_id}"
             )
             await bot.send_message(ADMIN_ID, admin_text)
+            logger.info(f"Admin notified for appointment {app_id}")
         except Exception as e:
             logger.error(f"Failed to notify admin: {e}")
 
@@ -395,6 +408,7 @@ async def confirm_appointment(callback: CallbackQuery, state: FSMContext, bot):
                     f"👤 Клиент: {client_name}"
                 )
                 await bot.send_message(CHANNEL_ID, channel_text)
+                logger.info(f"Channel notified for appointment {app_id}")
             except Exception as e:
                 logger.error(f"Failed to send to channel: {e}")
 
@@ -420,8 +434,11 @@ async def confirm_appointment(callback: CallbackQuery, state: FSMContext, bot):
 
     try:
         await callback.answer()
-    except:
-        pass
+    except TelegramBadRequest as e:
+        if "query is too old" in str(e):
+            logger.warning("Callback query too old in confirm_appointment")
+        else:
+            logger.error(f"Error in callback.answer: {e}")
 
 # Отмена FSM через inline-кнопку
 @router.callback_query(F.data == "cancel_fsm")
@@ -429,10 +446,11 @@ async def cancel_fsm(callback: CallbackQuery, state: FSMContext):
     await state.clear()
     try:
         await callback.message.edit_text("Действие отменено.")
-    except:
-        pass
+    except Exception as e:
+        logger.error(f"Error editing message in cancel_fsm: {e}")
     await callback.message.answer("Выберите действие:", reply_markup=main_menu())
     try:
         await callback.answer()
-    except:
-        pass
+    except TelegramBadRequest as e:
+        if "query is too old" in str(e):
+            logger.warning("Callback query too old in cancel_fsm")
