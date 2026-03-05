@@ -3,7 +3,7 @@ from datetime import datetime, timedelta
 from aiogram import Router, F
 from aiogram.types import Message, CallbackQuery
 from aiogram.fsm.context import FSMContext
-from aiogram.exceptions import TelegramBadRequest
+from aiogram.exceptions import TelegramBadRequest  # <-- ВАЖНО: добавлен импорт
 from database import Database
 from scheduler import ReminderScheduler
 from keyboards import (
@@ -283,7 +283,7 @@ async def service_selected(callback: CallbackQuery, state: FSMContext, bot):
         )
     except TelegramBadRequest as e:
         if "message is not modified" in str(e):
-            pass
+            logger.debug("Keyboard not modified, skipping update")
         else:
             raise
 
