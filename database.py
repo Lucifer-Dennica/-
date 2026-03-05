@@ -12,11 +12,13 @@ class Database:
     async def connect(self):
         """Создаёт пул соединений с базой данных."""
         self.pool = await asyncpg.create_pool(DATABASE_URL)
+        logger.info("Connected to database")
 
     async def close(self):
         """Закрывает пул соединений."""
         if self.pool:
             await self.pool.close()
+            logger.info("Database connection closed")
 
     # ----- Создание таблиц -----
     async def create_tables(self):
@@ -84,7 +86,7 @@ class Database:
                 ORDER BY slot_time
             """, slot_date)
             slots = [row['slot_time'] for row in rows]
-            logger.info(f"get_available_slots for {slot_date}: found {len(slots)} slots: {[s.strftime('%H:%M') for s in slots]}")
+            logger.info(f"get_available_slots for {slot_date}: found {len(slots)} slots")
             return slots
 
     async def get_all_slots(self, slot_date: date):
