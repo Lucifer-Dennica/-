@@ -60,6 +60,7 @@ def time_slots_keyboard(slots, date_str):
 
 # ----- Клавиатура выбора услуг (для клиента) с визуальным выделением -----
 def services_keyboard(services, selected_ids, date_str, time_str):
+    """services: список услуг, selected_ids: список выбранных ID, date_str, time_str для callback'ов"""
     builder = InlineKeyboardBuilder()
     for s in services:
         # Если услуга выбрана, добавляем галочку
