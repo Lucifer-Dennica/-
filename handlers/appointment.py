@@ -421,15 +421,26 @@ async def process_phone(message: Message, state: FSMContext):
         reply_markup=confirm_services_keyboard(date_str, time_str)
     )
 
-# Финальное подтверждение (старый обработчик confirm_ оставляем для совместимости)
+# Финальное подтверждение (обрабатывает оба формата: confirm_ и confirm_appointment_)
 @router.callback_query(F.data.startswith("confirm_"))
 async def final_confirm(callback: CallbackQuery, state: FSMContext, bot):
     parts = callback.data.split("_")
-    if len(parts) != 3:
+    if len(parts) < 3:
         await callback.answer("Неверные данные")
         return
-    date_str = parts[1]
-    time_str = parts[2]
+
+    # Определяем формат
+    if parts[1] == "appointment" and len(parts) >= 4:
+        # Формат confirm_appointment_2026-03-10_10:00
+        date_str = parts[2]
+        time_str = parts[3]
+    elif len(parts) == 3:
+        # Старый формат confirm_2026-03-10_10:00
+        date_str = parts[1]
+        time_str = parts[2]
+    else:
+        await callback.answer("Неверные данные")
+        return
 
     # Проверка на "cancel"
     if date_str == "cancel" or time_str == "cancel":
