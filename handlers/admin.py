@@ -301,7 +301,12 @@ async def admin_actions(callback: CallbackQuery, state: FSMContext):
             await delete_service_start(callback, callback.bot)
         elif full_callback == "admin_prices_back":
             await prices_back(callback, state)
-        # Действия со слотами и днями (проверяем по второму слову, но они более специфичны)
+        elif full_callback == "admin_manage_prices":
+            await callback.message.edit_text(
+                "Управление прайс-листом:",
+                reply_markup=admin_prices_keyboard()
+            )
+        # Действия со слотами и днями
         elif full_callback == "admin_add_slots":
             await state.update_data(admin_action='add_slots')
             await callback.message.edit_text(
@@ -349,11 +354,6 @@ async def admin_actions(callback: CallbackQuery, state: FSMContext):
             await callback.message.edit_text(
                 "Выберите дату для просмотра клиентов:",
                 reply_markup=admin_calendar_keyboard(now.year, now.month)
-            )
-        elif full_callback == "admin_manage_prices":
-            await callback.message.edit_text(
-                "Управление прайс-листом:",
-                reply_markup=admin_prices_keyboard()
             )
         else:
             logger.warning(f"Unknown admin callback: {full_callback}")
