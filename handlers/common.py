@@ -4,9 +4,11 @@ from aiogram.types import Message, CallbackQuery
 from aiogram.filters import CommandStart, Command
 from aiogram.fsm.context import FSMContext
 from aiogram.exceptions import TelegramBadRequest
-from keyboards import main_menu, subscription_check_keyboard, portfolio_keyboard
+from keyboards import (
+    main_menu, subscription_check_keyboard, portfolio_keyboard
+)
 from utils import check_subscription
-from config import CHANNEL_LINK, CHANNEL_ID
+from config import CHANNEL_LINK, CHANNEL_ID, ADMIN_ID
 from database import Database
 
 router = Router()
@@ -18,8 +20,13 @@ async def cmd_start(message: Message, state: FSMContext, bot):
     await state.clear()
     user_id = message.from_user.id
 
+    # Проверяем подписку (если канал задан)
     if CHANNEL_ID:
-        subscribed = await check_subscription(bot, user_id)
+        try:
+            subscribed = await check_subscription(bot, user_id)
+        except Exception as e:
+            logger.error(f"Subscription check error: {e}")
+            subscribed = False
         if not subscribed:
             await message.answer(
                 "🔒 Для записи необходимо подписаться на канал",
@@ -33,7 +40,7 @@ async def cmd_start(message: Message, state: FSMContext, bot):
         reply_markup=main_menu()
     )
 
-# Кнопка "Прайсы" — теперь показывает услуги из базы
+# Кнопка "Прайсы" — теперь показывает услуги из базы данных
 @router.message(F.text == "💰 Прайсы")
 async def show_prices(message: Message, bot):
     db: Database = bot.db
@@ -41,7 +48,7 @@ async def show_prices(message: Message, bot):
     if not services:
         text = "📋 Прайс-лист пуст."
     else:
-        text = "💅 <b>Наши услуги:</b>\n\n"
+        text = "💅 <b>Прайс-лист</b>\n\n"
         for s in services:
             text += f"• {s['name']} — {s['price']} BYN\n"
     await message.answer(text, parse_mode="HTML")
@@ -54,11 +61,15 @@ async def show_portfolio(message: Message):
         reply_markup=portfolio_keyboard()
     )
 
-# Кнопка "Проверить подписку"
+# Кнопка "Проверить подписку" (из инлайн-клавиатуры)
 @router.callback_query(F.data == "check_subscription")
 async def check_sub(callback: CallbackQuery, bot):
     user_id = callback.from_user.id
-    subscribed = await check_subscription(bot, user_id)
+    try:
+        subscribed = await check_subscription(bot, user_id)
+    except Exception as e:
+        logger.error(f"Subscription check error in callback: {e}")
+        subscribed = False
     if subscribed:
         try:
             await callback.message.edit_text(
@@ -78,3 +89,6 @@ async def check_sub(callback: CallbackQuery, bot):
     except TelegramBadRequest as e:
         if "query is too old" in str(e):
             logger.warning("Callback query too old in check_sub")
+
+# Команда /admin (если нужна, но уже есть в admin.py, можно оставить)
+# Здесь не дублируем, так как она уже обработана в admin.py
