@@ -1,6 +1,9 @@
 import asyncpg
 from datetime import datetime, date, time
 from config import DATABASE_URL
+import logging
+
+logger = logging.getLogger(__name__)
 
 class Database:
     def __init__(self):
@@ -59,6 +62,7 @@ class Database:
                     remind_at TIMESTAMP NOT NULL
                 )
             """)
+            logger.info("Tables created or already exist")
 
     # ----- Слоты -----
     async def add_time_slot(self, slot_date: date, slot_time: time):
@@ -69,6 +73,7 @@ class Database:
                 VALUES ($1, $2)
                 ON CONFLICT (slot_date, slot_time) DO NOTHING
             """, slot_date, slot_time)
+            logger.debug(f"Slot added: {slot_date} {slot_time}")
 
     async def get_available_slots(self, slot_date: date):
         """Возвращает список доступного времени для указанной даты."""
@@ -78,7 +83,9 @@ class Database:
                 WHERE slot_date = $1 AND is_available = TRUE
                 ORDER BY slot_time
             """, slot_date)
-            return [row['slot_time'] for row in rows]
+            slots = [row['slot_time'] for row in rows]
+            logger.info(f"get_available_slots for {slot_date}: found {len(slots)} slots: {[s.strftime('%H:%M') for s in slots]}")
+            return slots
 
     async def get_all_slots(self, slot_date: date):
         """Возвращает все слоты на дату (с доступностью)."""
@@ -97,6 +104,7 @@ class Database:
                 DELETE FROM time_slots
                 WHERE slot_date = $1 AND slot_time = $2 AND is_available = TRUE
             """, slot_date, slot_time)
+            logger.debug(f"Slot deleted: {slot_date} {slot_time}")
 
     async def delete_time_range(self, slot_date: date, start_time: time, end_time: time):
         """Удаляет все доступные слоты в заданном временном диапазоне."""
@@ -108,6 +116,7 @@ class Database:
                   AND slot_time <= $3
                   AND is_available = TRUE
             """, slot_date, start_time, end_time)
+            logger.debug(f"Slots deleted for {slot_date} from {start_time} to {end_time}")
 
     async def close_day(self, slot_date: date):
         """Помечает все слоты указанной даты как недоступные."""
@@ -117,6 +126,17 @@ class Database:
                 SET is_available = FALSE
                 WHERE slot_date = $1
             """, slot_date)
+            logger.info(f"Day closed: {slot_date}")
+
+    async def open_day(self, slot_date: date):
+        """Открывает день: все слоты становятся доступными."""
+        async with self.pool.acquire() as conn:
+            await conn.execute("""
+                UPDATE time_slots
+                SET is_available = TRUE
+                WHERE slot_date = $1
+            """, slot_date)
+            logger.info(f"Day opened: {slot_date}")
 
     async def occupy_slot(self, slot_date: date, slot_time: time):
         """Помечает слот как занятый (после бронирования)."""
@@ -126,6 +146,7 @@ class Database:
                 SET is_available = FALSE
                 WHERE slot_date = $1 AND slot_time = $2
             """, slot_date, slot_time)
+            logger.debug(f"Slot occupied: {slot_date} {slot_time}")
 
     async def free_slot(self, slot_date: date, slot_time: time):
         """Освобождает слот (после отмены записи)."""
@@ -135,6 +156,7 @@ class Database:
                 SET is_available = TRUE
                 WHERE slot_date = $1 AND slot_time = $2
             """, slot_date, slot_time)
+            logger.debug(f"Slot freed: {slot_date} {slot_time}")
 
     # ----- Записи -----
     async def create_appointment(self, user_id: int, client_name: str, client_phone: str,
@@ -155,6 +177,7 @@ class Database:
                 VALUES ($1, $2, $3, $4, $5)
                 RETURNING id
             """, user_id, app_date, app_time, client_name, client_phone)
+            logger.info(f"Appointment created: ID {app_id} for user {user_id} at {app_date} {app_time}")
             return app_id
 
     async def get_user_appointment(self, user_id: int):
@@ -181,6 +204,7 @@ class Database:
                 await self.free_slot(row['appointment_date'], row['appointment_time'])
                 # Удаляем запись
                 await conn.execute("DELETE FROM appointments WHERE id = $1", appointment_id)
+                logger.info(f"Appointment cancelled: ID {appointment_id}")
                 return True
             return False
 
@@ -198,11 +222,13 @@ class Database:
                 VALUES ($1, $2)
                 ON CONFLICT (appointment_id) DO UPDATE SET remind_at = EXCLUDED.remind_at
             """, appointment_id, remind_at)
+            logger.debug(f"Reminder saved for appointment {appointment_id} at {remind_at}")
 
     async def delete_reminder(self, appointment_id: int):
         """Удаляет запись о напоминании."""
         async with self.pool.acquire() as conn:
             await conn.execute("DELETE FROM reminders WHERE appointment_id = $1", appointment_id)
+            logger.debug(f"Reminder deleted for appointment {appointment_id}")
 
     async def get_all_reminders(self):
         """Возвращает все активные напоминания для восстановления после рестарта."""
