@@ -4,7 +4,7 @@ from aiogram.fsm.state import State, StatesGroup
 class AppointmentStates(StatesGroup):
     choosing_date = State()
     choosing_time = State()
-    choosing_services = State()      # новое состояние
+    choosing_services = State()
     entering_name = State()
     entering_phone = State()
     confirming = State()
@@ -21,7 +21,7 @@ class AdminStates(StatesGroup):
     deleting_range_date = State()
     deleting_range_start = State()
     deleting_range_end = State()
-    # Новые состояния для управления прайсом
+    # Состояния для управления прайсом
     adding_service_name = State()
     adding_service_price = State()
     editing_service_price = State()
