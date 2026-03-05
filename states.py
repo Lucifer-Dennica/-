@@ -21,7 +21,10 @@ class AdminStates(StatesGroup):
     deleting_range_date = State()
     deleting_range_start = State()
     deleting_range_end = State()
-    # Состояния для управления прайсом
+    # Управление прайсом
     adding_service_name = State()
     adding_service_price = State()
     editing_service_price = State()
+    # Настройки
+    editing_welcome = State()
+    editing_portfolio = State()
