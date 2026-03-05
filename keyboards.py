@@ -14,9 +14,6 @@ def main_menu():
 
 # ----- Общий календарь (для клиентов) -----
 def calendar_keyboard(year: int, month: int, prefix: str = "date"):
-    """
-    prefix: "date" для клиентов, "admin_date" для админки
-    """
     builder = InlineKeyboardBuilder()
     month_name = calendar.month_name[month]
     builder.row(InlineKeyboardButton(text=f"{month_name} {year}", callback_data="ignore"))
@@ -32,7 +29,6 @@ def calendar_keyboard(year: int, month: int, prefix: str = "date"):
                 date_str = f"{year}-{month:02d}-{day:02d}"
                 row.append(InlineKeyboardButton(text=str(day), callback_data=f"{prefix}_{date_str}"))
         builder.row(*row)
-    # Кнопки навигации
     prev_month = datetime(year, month, 1) - timedelta(days=1)
     next_month = datetime(year, month, 28) + timedelta(days=4)
     nav_row = []
@@ -48,7 +44,7 @@ def calendar_keyboard(year: int, month: int, prefix: str = "date"):
     builder.row(*nav_row)
     return builder.as_markup()
 
-# ----- Календарь для админки (с другим префиксом) -----
+# ----- Календарь для админки -----
 def admin_calendar_keyboard(year: int, month: int):
     return calendar_keyboard(year, month, prefix="admin_date")
 
@@ -64,10 +60,6 @@ def time_slots_keyboard(slots, date_str):
 
 # ----- Клавиатура выбора услуг (для клиента) -----
 def services_keyboard(services, date_str, time_str):
-    """
-    services: список словарей [{'id': 1, 'name': 'Френч', 'price': 1000}, ...]
-    date_str, time_str: для callback'ов при подтверждении
-    """
     builder = InlineKeyboardBuilder()
     for s in services:
         builder.button(
@@ -79,7 +71,7 @@ def services_keyboard(services, date_str, time_str):
     builder.row(InlineKeyboardButton(text="❌ Отмена", callback_data="cancel_fsm"))
     return builder.as_markup()
 
-# ----- Клавиатура подтверждения выбранных услуг (после выбора) -----
+# ----- Клавиатура подтверждения выбранных услуг -----
 def confirm_services_keyboard(date_str, time_str):
     builder = InlineKeyboardBuilder()
     builder.button(text="✅ Подтвердить запись", callback_data=f"confirm_appointment_{date_str}_{time_str}")
@@ -88,7 +80,7 @@ def confirm_services_keyboard(date_str, time_str):
     builder.adjust(1)
     return builder.as_markup()
 
-# ----- Админ-панель (обновлённая: добавлены кнопки для прайса) -----
+# ----- Админ-панель (основная) -----
 def admin_panel():
     builder = InlineKeyboardBuilder()
     builder.button(text="➕ Добавить слоты", callback_data="admin_add_slots")
@@ -110,16 +102,12 @@ def admin_prices_keyboard():
     builder.button(text="✏️ Редактировать цену", callback_data="admin_edit_service")
     builder.button(text="❌ Удалить услугу", callback_data="admin_delete_service")
     builder.button(text="📋 Просмотр услуг", callback_data="admin_list_services")
-    builder.button(text="🔙 Назад", callback_data="admin_back")
+    builder.button(text="🔙 Назад", callback_data="admin_prices_back")
     builder.adjust(2)
     return builder.as_markup()
 
 # ----- Клавиатура для выбора услуги из списка (админка) -----
 def admin_services_list_keyboard(services, action_prefix):
-    """
-    services: список услуг
-    action_prefix: например, 'edit_' или 'delete_'
-    """
     builder = InlineKeyboardBuilder()
     for s in services:
         builder.button(text=f"{s['name']} — {s['price']} BYN", callback_data=f"{action_prefix}{s['id']}")
@@ -133,7 +121,7 @@ def cancel_keyboard():
     builder.button(text="❌ Отмена", callback_data="cancel_fsm")
     return builder.as_markup()
 
-# ----- Кнопка подтверждения записи (старая, можно оставить для совместимости) -----
+# ----- Кнопка подтверждения записи (старая, для совместимости) -----
 def confirm_appointment_keyboard(date_str, time_str):
     builder = InlineKeyboardBuilder()
     builder.button(text="✅ Подтвердить", callback_data=f"confirm_{date_str}_{time_str}")
