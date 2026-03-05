@@ -612,11 +612,14 @@ async def delete_service_confirm(callback: CallbackQuery, bot):
             else:
                 raise
 
+# ИСПРАВЛЕННАЯ ФУНКЦИЯ ВОЗВРАТА В ГЛАВНОЕ МЕНЮ АДМИНКИ
 async def prices_back(callback: CallbackQuery, state: FSMContext):
+    """Возврат в главное меню админ-панели"""
+    await state.clear()
     try:
         await callback.message.edit_text(
-            "Управление прайс-листом:",
-            reply_markup=admin_prices_keyboard()
+            "Панель администратора:",
+            reply_markup=admin_panel()
         )
     except TelegramBadRequest as e:
         if "message is not modified" in str(e):
